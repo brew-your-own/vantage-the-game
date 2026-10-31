@@ -1,7 +1,9 @@
 # Vantage
 
-An original first-person strategy game about energy, height and line of sight, built for the
+A first-person strategy game about energy, height and line of sight, built for the
 browser. It runs fully locally, with no server.
+
+Inspired by Geoff Crammond's [*The Sentinel*](https://en.wikipedia.org/wiki/The_Sentinel_(video_game)) (1986).
 
 **Play it: https://brew-your-own.github.io/vantage-the-game/**
 
