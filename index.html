@@ -15,6 +15,16 @@
       #energy .pips { letter-spacing: 1px; color: #ffd24a; }
       #message { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); font-size: 15px; color: #c8ffd0; text-shadow: 0 0 4px #000; transition: opacity 0.4s; opacity: 0; pointer-events: none; }
       #message.error { color: #ff9a9a; }
+      #beam { position: fixed; right: 12px; top: 10px; font-size: 14px; color: #c8d0ff; text-shadow: 0 0 4px #000; pointer-events: none; }
+      #beam.safe { color: #7fa0c8; }
+      #beam.warn { color: #ffb347; font-weight: bold; }
+      #beam.lit { color: #ff5c5c; font-weight: bold; }
+      #lit { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.15s;
+             background: radial-gradient(ellipse at center, rgba(255,200,80,0) 45%, rgba(255,120,40,0.55) 100%); }
+      #end { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+             background: rgba(5,6,15,0.82); color: #e8ecff; text-align: center; }
+      #end h1 { font-size: 28px; letter-spacing: 4px; color: #ff9a6a; margin: 0 0 12px; }
+      #end p { margin: 4px; color: #b8c0e8; }
       #hud { position: fixed; left: 12px; bottom: 10px; font-size: 13px; color: #9fb0ff; pointer-events: none; text-shadow: 0 0 4px #000; }
     </style>
   </head>
@@ -24,6 +34,9 @@
     <div id="crosshair"></div>
     <div id="energy"></div>
     <div id="message"></div>
+    <div id="beam"></div>
+    <div id="lit"></div>
+    <div id="end"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

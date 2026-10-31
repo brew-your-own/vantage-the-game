@@ -3,15 +3,17 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type ActionResult, type Intent, SCATTER_COST, applyIntent, occludersOf } from './core/actions';
 import { cellTop } from './core/surface';
 import { DEFAULT_TERRAIN, generateTerrain } from './core/terrain';
+import { BEAM, beamEta, lampVisibleTiles, playerLit, step } from './core/keeper';
 import { castRay, visibleCells } from './core/visibility';
 import { ENERGY, type World, createWorld, playerEye, topOf } from './core/world';
 import { LookControls } from './input/controls';
 import { EntityView } from './render/entityMeshes';
+import { KeeperView } from './render/keeperView';
 import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/overlays';
 import { GameScene } from './render/scene';
 import { buildTerrainGeometry } from './render/terrainMesh';
 
-// M3: objects and actions on top of the first-person view.
+// M4: the Keeper and its beam on top of objects and actions.
 // URL: ?seed=<number>.
 
 const container = document.getElementById('app')!;
@@ -19,6 +21,9 @@ const hud = document.getElementById('hud')!;
 const energyEl = document.getElementById('energy')!;
 const messageEl = document.getElementById('message')!;
 const crosshair = document.getElementById('crosshair')!;
+const beamEl = document.getElementById('beam')!;
+const litEl = document.getElementById('lit')!;
+const endEl = document.getElementById('end')!;
 const view = new GameScene(container);
 const canvas = view.renderer.domElement;
 
@@ -31,7 +36,12 @@ const highlight = new TargetHighlight();
 const overlay = new VisibilityOverlay();
 const marker = createWispMarker();
 const entities = new EntityView();
-view.scene.add(highlight.group, overlay.mesh, marker, entities.group);
+const keeperView = new KeeperView();
+view.scene.add(highlight.group, overlay.mesh, marker, entities.group, keeperView.group);
+
+/** Simulation rate (Hz); rendering interpolates nothing yet, the beam is smooth enough. */
+const SIM_DT = 1 / 20;
+let simClock = 0;
 
 let seed = 0;
 let world: World;
@@ -52,6 +62,9 @@ function loadSeed(newSeed: number): void {
   }
   terrainMesh = new THREE.Mesh(buildTerrainGeometry(terrain), terrainMaterial);
   view.scene.add(terrainMesh);
+  keeperView.build(world, view.scene);
+  simClock = 0;
+  endEl.style.display = 'none';
   refresh();
 
   const url = new URL(window.location.href);
@@ -59,11 +72,17 @@ function loadSeed(newSeed: number): void {
   window.history.replaceState(null, '', url);
 }
 
-/** Recomputes everything derived from the world after it changes. */
-function refresh(): void {
+/**
+ * Recomputes everything derived from the world after it changes.
+ * `sight` is false when only non-blocking objects changed (e.g. moss appeared).
+ */
+function refresh(sight = true): void {
   const eye = playerEye(world);
-  visible = visibleCells(world.terrain, eye, occludersOf(world), world.player.cell);
-  overlay.update(world.terrain, visible);
+  if (sight) {
+    visible = visibleCells(world.terrain, eye, occludersOf(world), world.player.cell);
+    overlay.update(world.terrain, visible);
+    keeperView.setLampVisibility(lampVisibleTiles(world));
+  }
   entities.rebuild(world);
   marker.position.set(eye.x, eye.y, eye.z);
   updateBodyVisibility();
@@ -175,10 +194,59 @@ function updateHud(): void {
   hud.innerText = lines.join('\n');
 }
 
+/** Advances the simulation in fixed steps. */
+function simulate(dt: number): void {
+  simClock += dt;
+  let changed = false;
+  while (simClock >= SIM_DT) {
+    simClock -= SIM_DT;
+    for (const ev of step(world, SIM_DT)) {
+      changed = true;
+      if (ev.type === 'drained') flash('−1 the light burns', true);
+      if (ev.type === 'lost') showEnd();
+    }
+  }
+  if (changed) refresh(false); // only moss appeared: sight is unchanged
+}
+
+function updateBeamUi(): void {
+  if (world.status !== 'playing') {
+    beamEl.textContent = '';
+    litEl.style.opacity = '0';
+    return;
+  }
+  const lit = playerLit(world);
+  litEl.style.opacity = lit ? String(0.55 + 0.25 * Math.sin(world.time * 8)) : '0';
+  const eta = lit ? 0 : beamEta(world);
+  const sweep = (2 * Math.PI) / BEAM.speed;
+  if (lit) {
+    beamEl.textContent = 'IN THE BEAM';
+    beamEl.className = 'lit';
+  } else if (eta !== null && eta < 8) {
+    beamEl.textContent = `beam in ${eta.toFixed(1)}s`;
+    beamEl.className = 'warn';
+  } else if (eta === null) {
+    beamEl.textContent = 'in shadow';
+    beamEl.className = 'safe';
+  } else {
+    beamEl.textContent = `exposed · beam in ${Math.round(eta)}s / ${Math.round(sweep)}s`;
+    beamEl.className = '';
+  }
+}
+
+function showEnd(): void {
+  document.exitPointerLock();
+  endEl.innerHTML =
+    '<h1>YOUR LIGHT WENT OUT</h1><p>The Keeper drained your last energy.</p>' +
+    '<p>[Enter] retry this level · [N] new level</p>';
+  endEl.style.display = 'flex';
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   const key = e.key.toLowerCase();
   if (key === 'n') return loadSeed(Math.floor(Math.random() * 1_000_000));
+  if (key === 'enter' && world.status !== 'playing') return loadSeed(seed);
   if (key === 'v') return void (overlay.mesh.visible = !overlay.mesh.visible);
   if (key === 'o') return setMode(mode === 'orbit' ? 'first-person' : 'orbit');
   if (mode !== 'first-person') return;
@@ -212,6 +280,9 @@ view.renderer.setAnimationLoop(() => {
   } else {
     orbit.update();
   }
+  simulate(dt);
+  keeperView.update(world, clock.elapsedTime);
+  updateBeamUi();
   if (messageTimer > 0) {
     messageTimer -= dt;
     if (messageTimer <= 0) messageEl.style.opacity = '0';
@@ -228,6 +299,11 @@ if (import.meta.env.DEV) {
     world: () => world,
     target: () => target,
     act,
+    refresh,
+    step: (seconds: number) => {
+      for (let t = 0; t < seconds; t += SIM_DT) step(world, SIM_DT);
+      refresh(false);
+    },
     visibleCount: () => visible.reduce((a, v) => a + v, 0),
     visible: () => visible,
   };

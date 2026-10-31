@@ -45,6 +45,8 @@ export function canAct(world: World, cell: number, sight: SightTarget = 'ground'
  * every unit the player gains or spends moves to or from an object.
  */
 export function applyIntent(world: World, intent: Intent): ActionResult {
+  if (world.status !== 'playing') return fail('the game is over');
+  if (intent.type !== 'scatter' && intent.cell === world.keeper.cell) return fail('the Keeper stands there');
   switch (intent.type) {
     case 'harvest':
       return harvest(world, intent.cell);
@@ -100,7 +102,9 @@ function scatter(world: World): ActionResult {
   const myBase = supportY(world, from);
   const candidates: number[] = [];
   for (let i = 0; i < world.terrain.grid.count; i++) {
-    if (world.stacks[i].length === 0 && cellTop(world.terrain, i).y < myBase) candidates.push(i);
+    if (world.stacks[i].length === 0 && i !== world.keeper.cell && cellTop(world.terrain, i).y < myBase) {
+      candidates.push(i);
+    }
   }
   if (candidates.length === 0) return fail('nowhere lower to go');
   const rng = new Rng(world.rngState);

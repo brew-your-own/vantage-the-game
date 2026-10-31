@@ -1,5 +1,5 @@
-import { EYE_HEIGHT, HUSK_HEIGHT, SHARD_HEIGHT } from './constants';
-import { pickStartCell } from './level';
+import { EYE_HEIGHT, HUSK_HEIGHT, KEEPER_HEIGHT, SHARD_HEIGHT } from './constants';
+import { pickKeeperCell, pickStartCell } from './level';
 import { Rng } from './rng';
 import { cellTop } from './surface';
 import type { Terrain } from './terrain';
@@ -28,6 +28,15 @@ export interface Player {
   energy: number;
 }
 
+export interface Keeper {
+  /** The tile the tower stands on. Nothing else can be placed there. */
+  readonly cell: number;
+  /** Horizontal direction of the beam's centre, radians (bearing = atan2(dz, dx)). */
+  yaw: number;
+}
+
+export type GameStatus = 'playing' | 'lost';
+
 /**
  * Everything that changes during play. Each cell holds a stack of objects, bottom first:
  * zero or more Shards, optionally topped by one Husk, Seed or Moss.
@@ -36,7 +45,13 @@ export interface World {
   readonly terrain: Terrain;
   readonly stacks: Entity[][];
   readonly player: Player;
-  /** RNG state for gameplay randomness (Scatter, later moss growth and moths). */
+  readonly keeper: Keeper;
+  status: GameStatus;
+  /** Simulated seconds since the level started. */
+  time: number;
+  /** Seconds spent in the beam since the last unit of energy was drained. */
+  drainClock: number;
+  /** RNG state for gameplay randomness (Scatter, drain moss, later moths). */
   rngState: number;
   nextId: number;
 }
@@ -47,18 +62,23 @@ const MOSS_DENSITY = 0.1;
 
 export function createWorld(terrain: Terrain, seed: number): World {
   const stacks: Entity[][] = terrain.grid.cells.map(() => []);
+  const keeperCell = pickKeeperCell(terrain, seed);
+  const rng = new Rng((seed ^ 0x3c6ef372) >>> 0);
   const world: World = {
     terrain,
     stacks,
-    player: { cell: pickStartCell(terrain, seed), energy: START_ENERGY },
+    player: { cell: pickStartCell(terrain, seed, keeperCell), energy: START_ENERGY },
+    keeper: { cell: keeperCell, yaw: rng.range(0, Math.PI * 2) },
+    status: 'playing',
+    time: 0,
+    drainClock: 0,
     rngState: (seed ^ 0x9e3779b9) >>> 0,
     nextId: 1,
   };
   spawn(world, world.player.cell, 'husk');
 
-  const rng = new Rng((seed ^ 0x3c6ef372) >>> 0);
   for (let i = 0; i < terrain.grid.count; i++) {
-    if (i !== world.player.cell && rng.next() < MOSS_DENSITY) spawn(world, i, 'moss');
+    if (i !== world.player.cell && i !== keeperCell && rng.next() < MOSS_DENSITY) spawn(world, i, 'moss');
   }
   return world;
 }
@@ -87,6 +107,7 @@ export function supportY(world: World, cell: number): number {
 
 /** World Y of the top of the solid column on a cell (blocks sight), or -Infinity if none. */
 export function columnTop(world: World, cell: number): number {
+  if (cell === world.keeper.cell) return cellTop(world.terrain, cell).y + KEEPER_HEIGHT;
   const stack = world.stacks[cell];
   const shards = shardCount(stack);
   const hasHusk = stack.length > shards && stack[shards].kind === 'husk';

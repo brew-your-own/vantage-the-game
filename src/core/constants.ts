@@ -20,3 +20,6 @@ export const HUSK_HEIGHT = 1.4;
 
 /** Horizontal radius of the column an object stack occupies, for occlusion and picking. */
 export const OBJECT_RADIUS = 0.42;
+
+/** Height of the Keeper's tower; its lamp sits at the top. */
+export const KEEPER_HEIGHT = 3.2;

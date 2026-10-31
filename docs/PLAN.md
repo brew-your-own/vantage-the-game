@@ -51,10 +51,16 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
 - Turn and look freely (mouse look or keys). You stay rooted to one spot until you transfer.
 
 ### Threats
-- **The Beam**: a cone of light from the Keeper that sweeps at a set rotation speed.
-  Terrain and objects **cast real shadows**: we raycast the height field, so you can hide
-  behind a ridge or a Shard stack. Standing in the light drains energy **continuously**
-  (≈1 per second), not all at once, which gives you time to react.
+- **The Beam**: a 30°-wide wedge of light from the Keeper's lamp, making one full turn
+  every 36 s. The Keeper stands on the highest tile in the inner 60% of the map, so the
+  beam sweeps land in every direction. Terrain and objects **cast real shadows**, so you
+  can hide behind a ridge or a Shard stack. You're lit when you're inside the wedge and
+  the lamp has a clear line to your head or your feet.
+- Standing in the light drains energy **gradually** (1 per second, about 3 per pass), which
+  gives you time to react. Each drained unit falls back onto a random empty tile as
+  **moss**, so energy is still conserved. If you're lit with no energy left, you lose.
+- The HUD counts down to the beam's arrival, but only when the lamp can actually see you.
+  Otherwise it says you're in shadow. Lit tiles glow on the ground.
 - **Moths**: lit moss slowly turns into Moths. A Moth drifts toward the largest nearby
   cluster of energy, eats moss, and leeches energy from your Wisp if it reaches your tile.
   You can harvest a Moth if you can see the tile it's on.
@@ -209,7 +215,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M1 | Terrain *(done)*             | Seeded hex terrain generated and rendered; debug orbit camera; tests for rng/hex/terrain determinism. |
 | M2 | First-person + picking *(done)* | Wisp eye at a start tile, mouse look, crosshair picks tile/entity, LOS highlighting (green = can act, red = can't). |
 | M3 | Objects & actions *(done)*   | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
-| M4 | The Keeper & beam            | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
+| M4 | The Keeper & beam *(done)*   | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world                 | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
 | M6 | Relays & win loop            | Relays dim the beam, summit win, star scoring, seed codes, level select, localStorage progress. |
 | M7 | Look & SFX                   | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |

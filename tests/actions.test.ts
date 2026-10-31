@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { SCATTER_COST, applyIntent, canAct, occludersOf } from '../src/core/actions';
-import { HexGrid } from '../src/core/hex';
 import { Rng } from '../src/core/rng';
-import { DEFAULT_TERRAIN, type Terrain, generateTerrain } from '../src/core/terrain';
+import { DEFAULT_TERRAIN, generateTerrain } from '../src/core/terrain';
 import { castRay, canSeeCell, eyeAt } from '../src/core/visibility';
 import {
   ENERGY,
   type EntityKind,
-  type World,
   createWorld,
   playerEye,
   spawn,
@@ -15,31 +13,7 @@ import {
   topOf,
   totalEnergy,
 } from '../src/core/world';
-
-function flatTerrain(radius = 5, height = 1): Terrain {
-  const grid = new HexGrid(radius);
-  return {
-    grid,
-    heights: new Uint8Array(grid.count).fill(height),
-    params: { seed: 0, radius, maxHeight: 12, maxStep: 2 },
-  };
-}
-
-/** A world on flat ground with the player at (0,0), no moss, and the given energy. */
-function flatWorld(energy = 10, terrain = flatTerrain()): World {
-  const grid = terrain.grid;
-  const world: World = {
-    terrain,
-    stacks: grid.cells.map(() => []),
-    player: { cell: grid.indexOf(0, 0), energy },
-    rngState: 1234,
-    nextId: 1,
-  };
-  spawn(world, world.player.cell, 'husk');
-  return world;
-}
-
-const at = (w: World, q: number, r: number) => w.terrain.grid.indexOf(q, r);
+import { at, flatWorld } from './helpers/worlds';
 
 describe('harvest', () => {
   it('takes the top object and its energy', () => {
