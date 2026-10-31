@@ -26,6 +26,11 @@ export class Sfx {
   private hum: { gain: GainNode; osc: OscillatorNode[]; filter: BiquadFilterNode } | null = null;
   private _muted = false;
 
+  /** The shared context and master bus, once unlocked. Music plays through the same bus. */
+  get output(): { ctx: AudioContext; out: AudioNode } | null {
+    return this.ctx && this.master ? { ctx: this.ctx, out: this.master } : null;
+  }
+
   get muted(): boolean {
     return this._muted;
   }

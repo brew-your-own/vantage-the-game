@@ -12,6 +12,7 @@ export const ACTIONS = [
   'orbit',
   'pause',
   'mute',
+  'music',
   'newLevel',
 ] as const;
 export type GameAction = (typeof ACTIONS)[number];
@@ -30,7 +31,8 @@ export const ACTION_LABELS: Record<GameAction, string> = {
   keeperSight: "Keeper's sight overlay",
   orbit: 'orbit view',
   pause: 'pause',
-  mute: 'sound on/off',
+  mute: 'all sound on/off',
+  music: 'music on/off',
   newLevel: 'random new level',
 };
 
@@ -47,6 +49,7 @@ export const DEFAULT_KEYS: KeyMap = {
   orbit: 'o',
   pause: 'p',
   mute: 'u',
+  music: 'j',
   newLevel: 'n',
 };
 

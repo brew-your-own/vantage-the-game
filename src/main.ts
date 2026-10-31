@@ -28,13 +28,16 @@ import { KeeperView } from './render/keeperView';
 import { RelayView } from './render/relayView';
 import { paletteFor } from './render/palettes';
 import { Sfx } from './audio/sfx';
+import { Music } from './audio/music/music';
+import { type Mood, NEUTRAL_MOOD, moodOf, smoothMood } from './audio/music/mood';
+import { MoodPanel } from './audio/music/moodPanel';
 import { ACTIONS, ACTION_LABELS, DEFAULT_KEYS, type GameAction, actionFor, keyLabel, rebind } from './input/keymap';
 import { loadSettings, saveSettings } from './settings';
 import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/overlays';
 import { GameScene } from './render/scene';
 import { buildTerrainGeometry } from './render/terrainMesh';
 
-// M7: per-level palettes, sound effects, pause, key remapping.
+// M8: adaptive music on top of M7 (palettes, sound effects, pause, key remapping).
 // URL: ?level=<level code> (the old ?seed= is still accepted).
 // Internally a level code is the generator seed; players only ever see "level code",
 // so it is never confused with the Seed object they can plant.
@@ -55,6 +58,22 @@ const canvas = view.renderer.domElement;
 const settings = loadSettings();
 const sfx = new Sfx();
 sfx.muted = settings.muted;
+const music = new Music();
+music.enabled = settings.music;
+/** Smoothed mood the music follows. */
+let mood: Mood = NEUTRAL_MOOD;
+/** Dev-only sliders for the music mood (backquote key). */
+const moodPanel = import.meta.env.DEV ? new MoodPanel((s) => music.stinger(s)) : null;
+
+/** Starts audio on a user gesture; the music joins once the context exists. */
+function unlockAudio(): void {
+  sfx.unlock();
+  const out = sfx.output;
+  if (out && !music.attached) {
+    music.attach(out.ctx, out.out);
+    music.start(seed);
+  }
+}
 /** The action waiting for a new key in the controls menu, if any. */
 let rebinding: GameAction | null = null;
 let controlsOpen = false;
@@ -119,6 +138,8 @@ function loadLevel(code: number): void {
   simClock = 0;
   endEl.style.display = 'none';
   closeMenu();
+  mood = NEUTRAL_MOOD;
+  music.start(code);
   refresh();
 
   const url = new URL(window.location.href);
@@ -179,6 +200,11 @@ function act(intent: Intent): ActionResult {
   }
   for (const ev of result.events) {
     if (ev.type === 'harvested') sfx.play(ev.kind === 'moth' ? 'swat' : 'harvest');
+    if (ev.type === 'harvested' && ev.kind === 'moth') music.stinger('swat');
+    if (ev.type === 'transferred') music.stinger('transfer');
+    if (ev.type === 'scattered') music.stinger('scatter');
+    if (ev.type === 'relayDrained') music.stinger(ev.remaining > 0 ? 'relay' : 'dark');
+    if (ev.type === 'won') music.stinger('win');
     if (ev.type === 'placed') sfx.play('place');
     if (ev.type === 'fed') sfx.play('feed');
     if (ev.type === 'transferred') sfx.play('transfer');
@@ -343,6 +369,7 @@ function simulate(dt: number): void {
       }
       if (ev.type === 'lost') {
         sfx.play('lose');
+        music.stinger('lose');
         showEnd(ev.cause);
       }
       if (ev.type !== 'leeched') changed = true;
@@ -365,6 +392,18 @@ function updateRelaysUi(): void {
   const time = `${clockText(world.time)} / par ${clockText(spec.par)}`;
   relaysEl.innerHTML = `RELAYS <span class="marks">${marks}</span> · ${time}`;
   relaysEl.className = world.time > spec.par ? 'over' : '';
+}
+
+/** Feeds the music the smoothed mood; menus and pause keep only the calm and progress. */
+function updateMusic(dt: number): void {
+  const quiet = menuOpen || paused;
+  if (world.status === 'playing') {
+    const raw = moodOf(world);
+    const target = moodPanel?.override ?? (quiet ? { ...NEUTRAL_MOOD, progress: raw.progress, altitude: raw.altitude } : raw);
+    mood = smoothMood(mood, target, dt);
+  }
+  moodPanel?.show(mood);
+  music.update(mood, quiet && !moodPanel?.override);
 }
 
 /** Beam hum loudness: rises as the beam approaches, full when lit. */
@@ -467,6 +506,7 @@ function openMenu(): void {
     });
   });
   menuEl.querySelector('#toggle-sound')!.addEventListener('click', () => toggleMute());
+  menuEl.querySelector('#toggle-music')!.addEventListener('click', () => toggleMusic());
   menuEl.querySelector('#reset-keys')!.addEventListener('click', () => {
     settings.keys = { ...DEFAULT_KEYS };
     saveSettings(settings);
@@ -496,11 +536,20 @@ function controlsHtml(): string {
   return (
     `<details ${controlsOpen ? 'open' : ''}><summary>controls &amp; settings</summary>` +
     `<p><button id="toggle-sound">sound: ${sfx.muted ? 'off' : 'on'}</button> ` +
+    `<button id="toggle-music">music: ${music.enabled ? 'on' : 'off'}</button> ` +
     '<button id="reset-keys">reset keys</button></p>' +
     `<table class="controls">${rows}</table>` +
     '<p class="keys">click a key, then press the new one · M, Esc and Enter are fixed · mouse: look, click harvests</p>' +
     '</details>'
   );
+}
+
+function toggleMusic(): void {
+  music.enabled = !music.enabled;
+  settings.music = music.enabled;
+  saveSettings(settings);
+  if (menuOpen) openMenu();
+  else flash(`music ${music.enabled ? 'on' : 'off'}`);
 }
 
 function toggleMute(): void {
@@ -521,7 +570,7 @@ function setPaused(next: boolean): void {
 }
 
 window.addEventListener('keydown', (e) => {
-  sfx.unlock();
+  unlockAudio();
   if (rebinding) {
     e.preventDefault();
     if (e.key !== 'Escape') settings.keys = rebind(settings.keys, rebinding, e.key);
@@ -532,6 +581,10 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.repeat || e.target instanceof HTMLInputElement) return;
   const key = e.key.toLowerCase();
+  if (key === '`' && moodPanel) {
+    document.exitPointerLock();
+    return moodPanel.toggle();
+  }
   if (menuOpen) {
     if (key === 'm' || key === 'escape') closeMenu();
     return;
@@ -539,6 +592,7 @@ window.addEventListener('keydown', (e) => {
   if (key === 'm') return openMenu();
   const action = actionFor(settings.keys, e.key);
   if (action === 'mute') return toggleMute();
+  if (action === 'music') return toggleMusic();
   if (world.status === 'won') {
     if (key === 'enter') loadLevel(nextCode());
     else if (key === 'r') loadLevel(seed);
@@ -577,7 +631,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && world.status === 'playing' && !menuOpen) setPaused(true);
 });
 
-window.addEventListener('pointerdown', () => sfx.unlock());
+window.addEventListener('pointerdown', () => unlockAudio());
 
 canvas.addEventListener('mousedown', (e) => {
   if (mode === 'first-person' && look.locked && e.button === 0 && target) act({ type: 'harvest', cell: target.cell });
@@ -616,6 +670,7 @@ view.renderer.setAnimationLoop(() => {
   mothView.update(world, clock.elapsedTime);
   relayView.animate(clock.elapsedTime);
   updateBeamUi();
+  updateMusic(dt);
   if (messageTimer > 0) {
     messageTimer -= dt;
     if (messageTimer <= 0) messageEl.style.opacity = '0';
@@ -635,6 +690,8 @@ if (import.meta.env.DEV) {
     loadLevel,
     spec: () => spec,
     sfx,
+    music,
+    mood: () => mood,
     settings,
     refresh,
     step: (seconds: number) => {

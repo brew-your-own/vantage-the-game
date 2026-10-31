@@ -147,6 +147,15 @@ the game state changes:
 jump, a Moth harvested, a win (the progression resolves to a final cadence) and a loss
 (the music winds down in pitch and fades out).
 
+**As built (M8).** `src/audio/music/`: `theory.ts` (modes, degrees, level identity from
+the code: root C2–B2, a home mode among Dorian/Aeolian/Mixolydian/Lydian, 60–90 BPM, a 4–8
+chord progression, a 4–6 note motif), `mood.ts` (signals and asymmetric smoothing),
+`composer.ts` (pure bar and stinger composition), `instruments.ts` (saw pad, triangle bass,
+square pluck, FM bell, noise drums and riser, generated reverb), `music.ts` (look-ahead
+scheduler, layer buses, continuous filter/reverb/level changes). J toggles the music, U all
+sound. In dev builds the backquote key opens a panel with a slider per signal and a button
+per stinger, to audition the music.
+
 **Musical rules.** Changes to harmony and layers only happen on beat or bar boundaries,
 so the music stays in time. Volume, filter and reverb changes are smoothed continuously.
 Stingers are timed to the next beat.
@@ -232,7 +241,7 @@ state. The renderer reads state and never changes it.
   ~100 ms ahead on `AudioContext.currentTime`. This keeps timing tight even when frames
   drop. The composer works one bar at a time using the latest mood. It is pure code that
   returns plain note events, so it can be tested without any audio. Voices are capped at
-  about 24 and short-lived nodes are cleaned up automatically. Reverb comes from a
+  32 (pads and tension always play) and short-lived nodes are cleaned up automatically. Reverb comes from a
   generated noise impulse response, not a file.
 
 ---
@@ -251,7 +260,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M5 | Living world *(done)*        | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
 | M6 | Relays & win loop *(done)*   | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
 | M7 | Look & SFX *(done)*          | Per-level palettes (retro post-process tried and dropped), procedural sound effects, title/pause menus, key remapping. |
-| M8 | Adaptive music               | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
+| M8 | Adaptive music *(done)*      | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
 | M9 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
 | M10| Polish (stretch)             | Tutorial level, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |
 
