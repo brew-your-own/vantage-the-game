@@ -1,18 +1,12 @@
+import { BEAM, EYE_HEIGHT } from './constants';
+
+export { BEAM };
 import { lampPosition } from './level';
 import { Rng } from './rng';
 import { cellTop } from './surface';
 import { type Vec3, segmentClear } from './visibility';
 import { type World, columnTop, playerEye, spawn, supportY } from './world';
 
-/** Beam tuning. Relays (M6) will narrow and slow the beam as they are drained. */
-export const BEAM = {
-  /** Half of the beam's horizontal width, radians (15°). */
-  halfAngle: (15 * Math.PI) / 180,
-  /** Rotation speed, radians per second (one full turn every 36 s). */
-  speed: (2 * Math.PI) / 36,
-  /** Seconds in the beam per unit of energy drained. */
-  drainInterval: 1,
-};
 
 const TAU = Math.PI * 2;
 const wrap = (a: number) => ((a % TAU) + TAU) % TAU;
@@ -45,10 +39,29 @@ export function lampCanSee(world: World, p: Vec3, ownCell: number): boolean {
  * Checks the head and the feet of the current body.
  */
 export function playerInLampSight(world: World): boolean {
-  const cell = world.player.cell;
-  const eye = playerEye(world);
-  const feet = { x: eye.x, y: supportY(world, cell) + 0.3, z: eye.z };
-  return lampCanSee(world, eye, cell) || lampCanSee(world, feet, cell);
+  return keeperSeesBodyAt(world, world.player.cell);
+}
+
+/**
+ * Would the Keeper see a Wisp standing on `cell` (on top of its Shards)? Checks the head
+ * and the feet, like playerInLampSight, so it can be used to plan where to hide.
+ */
+export function keeperSeesBodyAt(world: World, cell: number): boolean {
+  if (cell === world.keeper.cell) return true;
+  const top = cellTop(world.terrain, cell);
+  const base = supportY(world, cell);
+  const head = { x: top.x, y: base + EYE_HEIGHT, z: top.z };
+  const feet = { x: top.x, y: base + 0.3, z: top.z };
+  return lampCanSee(world, head, cell) || lampCanSee(world, feet, cell);
+}
+
+/** keeperSeesBodyAt for every tile (the Keeper's own tile excluded). */
+export function keeperSightTiles(world: World): Uint8Array {
+  const out = new Uint8Array(world.terrain.grid.count);
+  for (let i = 0; i < out.length; i++) {
+    if (i !== world.keeper.cell) out[i] = keeperSeesBodyAt(world, i) ? 1 : 0;
+  }
+  return out;
 }
 
 /** Is the player lit by the beam right now? */

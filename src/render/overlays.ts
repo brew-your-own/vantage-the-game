@@ -51,17 +51,17 @@ export class TargetHighlight {
   }
 }
 
-/** Debug overlay tinting every tile visible from the current eye. */
+/** Overlay tinting a set of tiles (e.g. those in view, or those the Keeper can see). */
 export class VisibilityOverlay {
   readonly mesh: THREE.Mesh;
 
-  constructor() {
+  constructor(color: THREE.ColorRepresentation = 0x8cf0ff, opacity = 0.18) {
     this.mesh = new THREE.Mesh(
       new THREE.BufferGeometry(),
       new THREE.MeshBasicMaterial({
-        color: 0x8cf0ff,
+        color,
         transparent: true,
-        opacity: 0.18,
+        opacity,
         depthWrite: false,
         side: THREE.DoubleSide,
       }),

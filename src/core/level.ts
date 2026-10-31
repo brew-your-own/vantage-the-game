@@ -1,4 +1,4 @@
-import { KEEPER_HEIGHT } from './constants';
+import { EYE_HEIGHT, KEEPER_HEIGHT } from './constants';
 import { hexDistance } from './hex';
 import { Rng } from './rng';
 import { cellTop } from './surface';
@@ -28,11 +28,21 @@ export function lampPosition(terrain: Terrain, keeperCell: number): { x: number;
   return { x: top.x, y: top.y + KEEPER_HEIGHT, z: top.z };
 }
 
+/** Would the lamp see neither the head nor the feet of a Wisp standing on bare `cell`? */
+export function hiddenFromLamp(terrain: Terrain, keeperCell: number, cell: number): boolean {
+  const lamp = lampPosition(terrain, keeperCell);
+  const t = cellTop(terrain, cell);
+  return (
+    !segmentClear(terrain, lamp, { x: t.x, y: t.y + EYE_HEIGHT, z: t.z }) &&
+    !segmentClear(terrain, lamp, { x: t.x, y: t.y + 0.3, z: t.z })
+  );
+}
+
 /**
- * Picks the player's starting cell: a random cell among the lowest quarter of the map,
- * so the climb is part of the challenge. Cells the Keeper's lamp can see are avoided
- * when possible, so the player isn't drained before getting their bearings.
- * Deterministic per seed.
+ * Picks the player's starting cell, low on the map so the climb is part of the challenge,
+ * and hidden from the Keeper when possible: a hidden tile in the lowest quarter, else a
+ * hidden tile in the lower half, else any tile in the lowest quarter (createWorld then
+ * starts the beam just past the player). Deterministic per seed.
  */
 export function pickStartCell(terrain: Terrain, seed: number, keeperCell = -1): number {
   const rng = new Rng(seed ^ 0x51a27);
@@ -43,10 +53,12 @@ export function pickStartCell(terrain: Terrain, seed: number, keeperCell = -1): 
     if (h <= threshold && i !== keeperCell) low.push(i);
   });
   if (keeperCell < 0) return rng.pick(low);
-  const lamp = lampPosition(terrain, keeperCell);
-  const hidden = low.filter((i) => {
-    const t = cellTop(terrain, i);
-    return !segmentClear(terrain, lamp, { x: t.x, y: t.y + 0.3, z: t.z });
+  const hiddenLow = low.filter((i) => hiddenFromLamp(terrain, keeperCell, i));
+  if (hiddenLow.length > 0) return rng.pick(hiddenLow);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const hiddenHalf: number[] = [];
+  terrain.heights.forEach((h, i) => {
+    if (h <= median && i !== keeperCell && hiddenFromLamp(terrain, keeperCell, i)) hiddenHalf.push(i);
   });
-  return rng.pick(hidden.length > 0 ? hidden : low);
+  return rng.pick(hiddenHalf.length > 0 ? hiddenHalf : low);
 }

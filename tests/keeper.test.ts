@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { applyIntent } from '../src/core/actions';
 import { HexGrid, hexDistance } from '../src/core/hex';
-import { BEAM, beamEta, lampVisibleTiles, playerInLampSight, playerLit, step } from '../src/core/keeper';
-import { lampPosition, pickKeeperCell, pickStartCell } from '../src/core/level';
-import { cellTop } from '../src/core/surface';
+import {
+  BEAM,
+  beamEta,
+  keeperSeesBodyAt,
+  keeperSightTiles,
+  lampVisibleTiles,
+  playerInLampSight,
+  playerLit,
+  step,
+} from '../src/core/keeper';
+import { hiddenFromLamp, pickKeeperCell, pickStartCell } from '../src/core/level';
 import { DEFAULT_TERRAIN, type Terrain, generateTerrain } from '../src/core/terrain';
-import { segmentClear } from '../src/core/visibility';
 import { type World, createWorld, spawn, totalEnergy } from '../src/core/world';
 
 /**
@@ -62,16 +69,26 @@ describe('placement', () => {
     }
   });
 
-  it('starts the player out of the lamp’s sight when possible', () => {
-    for (const seed of [1, 2, 3, 4, 5]) {
+  it('starts the player hidden from the Keeper, or with a full beam turn to act', () => {
+    for (const seed of [1, 2, 3, 4, 5, 42]) {
       const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
       const world = createWorld(terrain, seed);
       expect(world.player.cell).not.toBe(world.keeper.cell);
-      const start = pickStartCell(terrain, seed, world.keeper.cell);
-      const t = cellTop(terrain, start);
-      const seen = segmentClear(terrain, lampPosition(terrain, world.keeper.cell), { x: t.x, y: t.y + 0.3, z: t.z });
-      expect(seen).toBe(false);
       expect(world.stacks[world.keeper.cell]).toHaveLength(0);
+      if (playerInLampSight(world)) {
+        expect(beamEta(world)!).toBeGreaterThan(0.9 * ((2 * Math.PI) / BEAM.speed - (2 * BEAM.halfAngle) / BEAM.speed));
+      }
+    }
+  });
+
+  it('prefers a hidden low start tile when one exists', () => {
+    // Seeds 1 and 4 have hidden tiles in their lowest quarter.
+    for (const seed of [1, 4]) {
+      const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
+      const world = createWorld(terrain, seed);
+      expect(hiddenFromLamp(terrain, world.keeper.cell, world.player.cell)).toBe(true);
+      expect(playerInLampSight(world)).toBe(false);
+      expect(pickStartCell(terrain, seed, world.keeper.cell)).toBe(world.player.cell);
     }
   });
 
@@ -157,5 +174,38 @@ describe('the beam', () => {
       return [w.keeper.yaw, w.player.energy, w.rngState];
     };
     expect(play()).toEqual(play());
+  });
+});
+
+describe("the Keeper's sight overlay", () => {
+  it('agrees with the exposure check wherever the player stands', () => {
+    const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed: 42 });
+    const w = createWorld(terrain, 42);
+    const sight = keeperSightTiles(w);
+    const start = w.player.cell;
+    expect(sight[start]).toBe(playerInLampSight(w) ? 1 : 0);
+    // Move the body to a few other tiles and compare.
+    const body = w.stacks[start].pop()!;
+    let checked = 0;
+    for (let i = 0; i < terrain.grid.count && checked < 40; i += 13) {
+      if (w.stacks[i].length || i === w.keeper.cell) continue;
+      w.stacks[i].push(body);
+      w.player.cell = i;
+      expect(playerInLampSight(w)).toBe(keeperSeesBodyAt(w, i));
+      w.stacks[i].pop();
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(20);
+    // Both kinds of tiles exist on a real level.
+    expect(sight.some((v) => v === 1)).toBe(true);
+    expect(sight.some((v, i) => v === 0 && i !== w.keeper.cell)).toBe(true);
+  });
+
+  it('a Shard wall turns a tile from seen to hidden', () => {
+    const w = arena(5, Math.PI);
+    const spot = w.terrain.grid.indexOf(0, 3);
+    expect(keeperSightTiles(w)[spot]).toBe(1);
+    for (let i = 0; i < 4; i++) spawn(w, w.terrain.grid.indexOf(0, 2), 'shard');
+    expect(keeperSightTiles(w)[spot]).toBe(0);
   });
 });

@@ -23,3 +23,13 @@ export const OBJECT_RADIUS = 0.42;
 
 /** Height of the Keeper's tower; its lamp sits at the top. */
 export const KEEPER_HEIGHT = 3.2;
+
+/** Beam tuning. Relays (M6) will narrow and slow the beam as they are drained. */
+export const BEAM = {
+  /** Half of the beam's horizontal width, radians (15°). */
+  halfAngle: (15 * Math.PI) / 180,
+  /** Rotation speed, radians per second (one full turn every 36 s). */
+  speed: (2 * Math.PI) / 36,
+  /** Seconds in the beam per unit of energy drained. */
+  drainInterval: 1,
+};

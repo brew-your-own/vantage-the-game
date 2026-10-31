@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type ActionResult, type Intent, SCATTER_COST, applyIntent, occludersOf } from './core/actions';
 import { cellTop } from './core/surface';
 import { DEFAULT_TERRAIN, generateTerrain } from './core/terrain';
-import { BEAM, beamEta, lampVisibleTiles, playerLit, step } from './core/keeper';
+import { BEAM, beamEta, keeperSightTiles, lampVisibleTiles, playerLit, step } from './core/keeper';
 import { castRay, visibleCells } from './core/visibility';
 import { ENERGY, type World, createWorld, playerEye, topOf } from './core/world';
 import { LookControls } from './input/controls';
@@ -37,7 +37,9 @@ const overlay = new VisibilityOverlay();
 const marker = createWispMarker();
 const entities = new EntityView();
 const keeperView = new KeeperView();
-view.scene.add(highlight.group, overlay.mesh, marker, entities.group, keeperView.group);
+/** Tiles where a Wisp would be in the Keeper's sight (K). Computed only while shown. */
+const keeperOverlay = new VisibilityOverlay(0xff3020, 0.4);
+view.scene.add(highlight.group, overlay.mesh, keeperOverlay.mesh, marker, entities.group, keeperView.group);
 
 /** Simulation rate (Hz); rendering interpolates nothing yet, the beam is smooth enough. */
 const SIM_DT = 1 / 20;
@@ -82,11 +84,16 @@ function refresh(sight = true): void {
     visible = visibleCells(world.terrain, eye, occludersOf(world), world.player.cell);
     overlay.update(world.terrain, visible);
     keeperView.setLampVisibility(lampVisibleTiles(world));
+    updateKeeperOverlay();
   }
   entities.rebuild(world);
   marker.position.set(eye.x, eye.y, eye.z);
   updateBodyVisibility();
   updateEnergy();
+}
+
+function updateKeeperOverlay(): void {
+  if (keeperOverlay.mesh.visible) keeperOverlay.update(world.terrain, keeperSightTiles(world));
 }
 
 function updateBodyVisibility(): void {
@@ -190,7 +197,7 @@ function updateHud(): void {
       ? 'click to look around (Esc releases) · arrows also turn'
       : `click/H harvest · 1 shard(${ENERGY.shard}) 2 husk(${ENERGY.husk}) 3 seed(${ENERGY.seed}) · R transfer · X scatter(${SCATTER_COST})`,
   );
-  lines.push(`seed ${seed} · V visible tiles · O orbit · N new level`);
+  lines.push(`seed ${seed} · V your view · K Keeper's sight · O orbit · N new level`);
   hud.innerText = lines.join('\n');
 }
 
@@ -226,10 +233,10 @@ function updateBeamUi(): void {
     beamEl.textContent = `beam in ${eta.toFixed(1)}s`;
     beamEl.className = 'warn';
   } else if (eta === null) {
-    beamEl.textContent = 'in shadow';
+    beamEl.textContent = 'hidden from the Keeper';
     beamEl.className = 'safe';
   } else {
-    beamEl.textContent = `exposed · beam in ${Math.round(eta)}s / ${Math.round(sweep)}s`;
+    beamEl.textContent = `in the Keeper's sight · beam in ${Math.round(eta)}s / ${Math.round(sweep)}s`;
     beamEl.className = '';
   }
 }
@@ -248,6 +255,10 @@ window.addEventListener('keydown', (e) => {
   if (key === 'n') return loadSeed(Math.floor(Math.random() * 1_000_000));
   if (key === 'enter' && world.status !== 'playing') return loadSeed(seed);
   if (key === 'v') return void (overlay.mesh.visible = !overlay.mesh.visible);
+  if (key === 'k') {
+    keeperOverlay.mesh.visible = !keeperOverlay.mesh.visible;
+    return updateKeeperOverlay();
+  }
   if (key === 'o') return setMode(mode === 'orbit' ? 'first-person' : 'orbit');
   if (mode !== 'first-person') return;
   if (key === 'x') return void act({ type: 'scatter' });

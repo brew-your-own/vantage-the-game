@@ -59,8 +59,12 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
 - Standing in the light drains energy **gradually** (1 per second, about 3 per pass), which
   gives you time to react. Each drained unit falls back onto a random empty tile as
   **moss**, so energy is still conserved. If you're lit with no energy left, you lose.
-- The HUD counts down to the beam's arrival, but only when the lamp can actually see you.
-  Otherwise it says you're in shadow. Lit tiles glow on the ground.
+- The HUD says **"hidden from the Keeper"** when the lamp can't see you. Otherwise it shows
+  **"in the Keeper's sight · beam in Ns"**, then an amber countdown in the last 8 s, then
+  **IN THE BEAM**. Lit tiles glow on the ground, and `K` tints every tile where a standing
+  Wisp would be in the Keeper's sight, to help plan cover.
+- You start on a low tile hidden from the Keeper when one exists. Otherwise the beam has
+  just swept past you, giving you a full turn to act.
 - **Moths**: lit moss slowly turns into Moths. A Moth drifts toward the largest nearby
   cluster of energy, eats moss, and leeches energy from your Wisp if it reaches your tile.
   You can harvest a Moth if you can see the tile it's on.

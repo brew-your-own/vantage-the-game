@@ -1,5 +1,5 @@
-import { EYE_HEIGHT, HUSK_HEIGHT, KEEPER_HEIGHT, SHARD_HEIGHT } from './constants';
-import { pickKeeperCell, pickStartCell } from './level';
+import { BEAM, EYE_HEIGHT, HUSK_HEIGHT, KEEPER_HEIGHT, SHARD_HEIGHT } from './constants';
+import { hiddenFromLamp, pickKeeperCell, pickStartCell } from './level';
 import { Rng } from './rng';
 import { cellTop } from './surface';
 import type { Terrain } from './terrain';
@@ -63,12 +63,20 @@ const MOSS_DENSITY = 0.1;
 export function createWorld(terrain: Terrain, seed: number): World {
   const stacks: Entity[][] = terrain.grid.cells.map(() => []);
   const keeperCell = pickKeeperCell(terrain, seed);
+  const startCell = pickStartCell(terrain, seed, keeperCell);
   const rng = new Rng((seed ^ 0x3c6ef372) >>> 0);
+  let yaw = rng.range(0, Math.PI * 2);
+  if (!hiddenFromLamp(terrain, keeperCell, startCell)) {
+    // No hiding place to start in: the beam has just swept past, giving a full turn to act.
+    const k = cellTop(terrain, keeperCell);
+    const p = cellTop(terrain, startCell);
+    yaw = Math.atan2(p.z - k.z, p.x - k.x) + BEAM.halfAngle + 0.05;
+  }
   const world: World = {
     terrain,
     stacks,
-    player: { cell: pickStartCell(terrain, seed, keeperCell), energy: START_ENERGY },
-    keeper: { cell: keeperCell, yaw: rng.range(0, Math.PI * 2) },
+    player: { cell: startCell, energy: START_ENERGY },
+    keeper: { cell: keeperCell, yaw },
     status: 'playing',
     time: 0,
     drainClock: 0,
