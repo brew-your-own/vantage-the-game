@@ -23,7 +23,10 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
   can hold objects. Tiles are joined by bevel strips, which become **slopes** where
   neighbouring heights differ (at most 2 levels apart). Slopes can't hold objects, but they
   do block line of sight.
-- Every level comes from a **seed**. A level is identified by a short code such as `K7Q-204`,
+- Every level is generated from a **level code**, a number such as `42` (later perhaps a
+  friendlier form like `K7Q-204`), via `?level=42` in the URL. Internally it seeds the random
+  generator. Player-facing text always says "level code", never "seed", so it can't be
+  confused with the Seed object. A level is identified by its code,
   so levels are reproducible and shareable.
 
 ### Energy (always conserved, no free energy)
@@ -153,7 +156,7 @@ src/
     rng.ts              # seeded PRNG (mulberry32 / sfc32)
     hex.ts              # axial coordinates, neighbours, hex→world transform
     terrain.ts          # height-field generation: noise → terraces → smoothing, flat-tile mask
-    level.ts            # seed code ↔ params; placement of Keeper, Relays, moss, player start
+    level.ts            # level code ↔ params; placement of Keeper, Relays, moss, player start
     visibility.ts       # line of sight: ray-march eye → tile base over the height field + objects
     lighting.ts         # beam cone + shadow test (same ray-march from the lamp)
     entities.ts         # entity types, stacks per tile, energy values
@@ -170,7 +173,7 @@ src/
     controls.ts         # pointer lock, mouse look, key bindings → intents
   ui/
     hud.ts              # energy bar, relay count, beam warning, action hints
-    menus.ts            # title, level select (seed entry), pause, win/lose
+    menus.ts            # title, level select (level code entry), pause, win/lose
   audio/
     context.ts          # shared AudioContext; resume on first user gesture; suspend when tab hidden
     sfx.ts              # procedural sound effects
@@ -221,7 +224,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M3 | Objects & actions *(done)*   | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
 | M4 | The Keeper & beam *(done)*   | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world                 | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
-| M6 | Relays & win loop            | Relays dim the beam, summit win, star scoring, seed codes, level select, localStorage progress. |
+| M6 | Relays & win loop            | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
 | M7 | Look & SFX                   | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music               | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
 | M9 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
@@ -259,8 +262,9 @@ game dependencies, so they can be started earlier, alongside M4–M6, if useful.
 ---
 
 ## 7. Open questions
-- Should levels be fully procedural (endless seeds), or a curated list of ~20 seeds with a
-  difficulty curve, with free seed entry as a bonus? *(Proposed: curated list plus free entry.)*
+- Should levels be fully procedural (endless level codes), or a curated list of ~20 level codes
+  with a difficulty curve, with free level-code entry as a bonus? *(Proposed: curated list plus
+  free entry.)*
 - Keyboard and mouse only, or touch controls too?
 - How strict should the retro look be (very low resolution and harsh dither) versus a
   cleaner modern low-poly style? We could offer both as a setting.

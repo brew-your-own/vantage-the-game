@@ -14,7 +14,9 @@ import { GameScene } from './render/scene';
 import { buildTerrainGeometry } from './render/terrainMesh';
 
 // M4: the Keeper and its beam on top of objects and actions.
-// URL: ?seed=<number>.
+// URL: ?level=<level code> (the old ?seed= is still accepted).
+// Internally a level code is the generator seed; players only ever see "level code",
+// so it is never confused with the Seed object they can plant.
 
 const container = document.getElementById('app')!;
 const hud = document.getElementById('hud')!;
@@ -70,7 +72,8 @@ function loadSeed(newSeed: number): void {
   refresh();
 
   const url = new URL(window.location.href);
-  url.searchParams.set('seed', String(seed));
+  url.searchParams.delete('seed');
+  url.searchParams.set('level', String(seed));
   window.history.replaceState(null, '', url);
 }
 
@@ -197,7 +200,7 @@ function updateHud(): void {
       ? 'click to look around (Esc releases) · arrows also turn'
       : `click/H harvest · 1 shard(${ENERGY.shard}) 2 husk(${ENERGY.husk}) 3 seed(${ENERGY.seed}) · R transfer · X scatter(${SCATTER_COST})`,
   );
-  lines.push(`seed ${seed} · V your view · K Keeper's sight · O orbit · N new level`);
+  lines.push(`level code ${seed} · V your view · K Keeper's sight · O orbit · N new level`);
   hud.innerText = lines.join('\n');
 }
 
@@ -275,7 +278,8 @@ canvas.addEventListener('mousedown', (e) => {
   if (mode === 'first-person' && look.locked && e.button === 0 && target) act({ type: 'harvest', cell: target.cell });
 });
 
-const param = Number(new URLSearchParams(window.location.search).get('seed'));
+const query = new URLSearchParams(window.location.search);
+const param = Number(query.get('level') ?? query.get('seed'));
 loadSeed(Number.isFinite(param) && param > 0 ? param : Math.floor(Math.random() * 1_000_000));
 setMode('first-person');
 
