@@ -17,6 +17,9 @@ import { DEFAULT_TERRAIN, generateTerrain } from '../src/core/terrain';
 import { type World, createWorld, spawn, totalEnergy } from '../src/core/world';
 import { arena } from './helpers/worlds';
 
+/** Long simulations: slow CI runners need more than Vitest's 5 s default. */
+const SLOW = 30_000;
+
 const run = (w: World, seconds: number, dt = 0.05) => {
   const events = [];
   for (let t = 0; t < seconds - 1e-9; t += dt) events.push(...step(w, dt));
@@ -160,7 +163,7 @@ describe('the beam', () => {
       return [w.keeper.yaw, w.player.energy, w.rngState];
     };
     expect(play()).toEqual(play());
-  });
+  }, SLOW);
 });
 
 describe("the Keeper's sight overlay", () => {

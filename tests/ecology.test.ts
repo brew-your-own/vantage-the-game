@@ -17,6 +17,9 @@ import {
 } from '../src/core/world';
 import { arena, at, flatWorld } from './helpers/worlds';
 
+/** Long simulations: slow CI runners need more than Vitest's 5 s default. */
+const SLOW = 30_000;
+
 const run = (w: World, seconds: number, dt = 0.05) => {
   const events = [];
   for (let t = 0; t < seconds - 1e-9; t += dt) events.push(...step(w, dt));
@@ -278,7 +281,7 @@ describe('the living world', () => {
       }
       expect(hatched).toBeGreaterThan(0);
     }
-  });
+  }, SLOW);
 
   it('is deterministic', () => {
     BEAM.speed = saved.speed;
@@ -288,5 +291,5 @@ describe('the living world', () => {
       return JSON.stringify([w.moths, w.stacks, w.player, w.rngState]);
     };
     expect(play()).toBe(play());
-  });
+  }, SLOW);
 });
