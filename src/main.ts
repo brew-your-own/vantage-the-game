@@ -1,31 +1,48 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { DEFAULT_TERRAIN, generateTerrain } from './core/terrain';
+import { GameScene } from './render/scene';
+import { buildTerrainGeometry } from './render/terrainMesh';
+
+// M1 debug viewer: seeded terrain + orbit camera.
+// URL: ?seed=<number>. Keys: N = new random seed.
 
 const container = document.getElementById('app')!;
-const renderer = new THREE.WebGLRenderer({ antialias: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-container.appendChild(renderer.domElement);
+const hud = document.getElementById('hud')!;
+const view = new GameScene(container);
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a1a);
-const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 500);
-camera.position.set(0, 2, 5);
+const controls = new OrbitControls(view.camera, view.renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 2, 0);
+view.camera.position.set(0, 28, 34);
 
-const mesh = new THREE.Mesh(
-  new THREE.CylinderGeometry(1, 1, 0.4, 6),
-  new THREE.MeshLambertMaterial({ color: 0x3fa34d, flatShading: true }),
-);
-scene.add(mesh, new THREE.HemisphereLight(0xffffff, 0x222244, 1.2));
+const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide });
+let terrainMesh: THREE.Mesh | null = null;
 
-function resize() {
-  const { clientWidth: w, clientHeight: h } = container;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+function loadSeed(seed: number): void {
+  const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
+  if (terrainMesh) {
+    view.scene.remove(terrainMesh);
+    terrainMesh.geometry.dispose();
+  }
+  terrainMesh = new THREE.Mesh(buildTerrainGeometry(terrain), material);
+  view.scene.add(terrainMesh);
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('seed', String(seed));
+  window.history.replaceState(null, '', url);
+  hud.textContent = `seed ${seed} · ${terrain.grid.count} tiles · [N] new seed · drag to orbit`;
 }
-window.addEventListener('resize', resize);
-resize();
 
-renderer.setAnimationLoop((t) => {
-  mesh.rotation.y = t / 1000;
-  renderer.render(scene, camera);
+const randomSeed = () => Math.floor(Math.random() * 1_000_000);
+const param = Number(new URLSearchParams(window.location.search).get('seed'));
+loadSeed(Number.isFinite(param) && param > 0 ? param : randomSeed());
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'n' || e.key === 'N') loadSeed(randomSeed());
+});
+
+view.renderer.setAnimationLoop(() => {
+  controls.update();
+  view.render();
 });

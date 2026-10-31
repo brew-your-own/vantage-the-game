@@ -19,8 +19,10 @@ its light touches loses energy. The Keeper draws its power from **Relays**, pylo
 spread across the map. Drain every Relay, the lamp goes dark, and the summit is yours.
 
 ### The world
-- **Hex grid** terrain with terraced heights (0–12 levels) and slopes between terraces.
-- Only **flat hex tiles** can hold objects. Slopes are visible but you can't act on them.
+- **Hex grid** terrain with terraced heights (0–12 levels). Every tile has a flat top that
+  can hold objects. Tiles are joined by bevel strips, which become **slopes** where
+  neighbouring heights differ (at most 2 levels apart). Slopes can't hold objects, but they
+  do block line of sight.
 - Every level comes from a **seed**. A level is identified by a short code such as `K7Q-204`,
   so levels are reproducible and shareable.
 
@@ -200,7 +202,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | #  | Milestone                    | Deliverable / done when                                                     |
 |----|------------------------------|------------------------------------------------------------------------------|
 | M0 | Scaffold *(done)*            | Vite + TS + Three.js, git, placeholder scene renders.                        |
-| M1 | Terrain                      | Seeded hex terrain generated and rendered; debug orbit camera; tests for rng/hex/terrain determinism. |
+| M1 | Terrain *(done)*             | Seeded hex terrain generated and rendered; debug orbit camera; tests for rng/hex/terrain determinism. |
 | M2 | First-person + picking       | Wisp eye at a start tile, mouse look, crosshair picks tile/entity, LOS highlighting (green = can act, red = can't). |
 | M3 | Objects & actions            | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
 | M4 | The Keeper & beam            | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
