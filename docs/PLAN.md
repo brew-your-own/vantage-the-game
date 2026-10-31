@@ -203,7 +203,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 |----|------------------------------|------------------------------------------------------------------------------|
 | M0 | Scaffold *(done)*            | Vite + TS + Three.js, git, placeholder scene renders.                        |
 | M1 | Terrain *(done)*             | Seeded hex terrain generated and rendered; debug orbit camera; tests for rng/hex/terrain determinism. |
-| M2 | First-person + picking       | Wisp eye at a start tile, mouse look, crosshair picks tile/entity, LOS highlighting (green = can act, red = can't). |
+| M2 | First-person + picking *(done)* | Wisp eye at a start tile, mouse look, crosshair picks tile/entity, LOS highlighting (green = can act, red = can't). |
 | M3 | Objects & actions            | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
 | M4 | The Keeper & beam            | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world                 | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |

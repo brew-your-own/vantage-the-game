@@ -5,7 +5,7 @@ import { Rng } from '../core/rng';
 export class GameScene {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
+  readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 400);
 
   constructor(private readonly container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
