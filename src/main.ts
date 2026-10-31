@@ -31,6 +31,8 @@ import { Sfx } from './audio/sfx';
 import { Music } from './audio/music/music';
 import { type Mood, NEUTRAL_MOOD, moodOf, smoothMood } from './audio/music/mood';
 import { MoodPanel } from './audio/music/moodPanel';
+import { TauntDirector, type TauntTrigger } from './audio/taunts';
+import { KeeperVoice } from './audio/voice';
 import { ACTIONS, ACTION_LABELS, DEFAULT_KEYS, type GameAction, actionFor, keyLabel, rebind } from './input/keymap';
 import { loadSettings, saveSettings } from './settings';
 import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/overlays';
@@ -53,6 +55,7 @@ const endEl = document.getElementById('end')!;
 const relaysEl = document.getElementById('relays')!;
 const menuEl = document.getElementById('menu')!;
 const pauseEl = document.getElementById('pause')!;
+const tauntEl = document.getElementById('taunt')!;
 const view = new GameScene(container);
 const canvas = view.renderer.domElement;
 const settings = loadSettings();
@@ -60,6 +63,16 @@ const sfx = new Sfx();
 sfx.muted = settings.muted;
 const music = new Music();
 music.enabled = settings.music;
+const voice = new KeeperVoice();
+voice.enabled = settings.voice;
+voice.muted = settings.muted;
+let taunts = new TauntDirector(0);
+/** Seconds left showing the current taunt subtitle. */
+let tauntTimer = 0;
+/** Speech needs a user gesture first; until then the Keeper keeps quiet. */
+let audioUnlocked = false;
+/** Previous frame's beam state, to notice the moment the beam finds the Wisp. */
+let wasLit = false;
 /** Smoothed mood the music follows. */
 let mood: Mood = NEUTRAL_MOOD;
 /** Dev-only sliders for the music mood (backquote key). */
@@ -67,6 +80,7 @@ const moodPanel = import.meta.env.DEV ? new MoodPanel((s) => music.stinger(s)) :
 
 /** Starts audio on a user gesture; the music joins once the context exists. */
 function unlockAudio(): void {
+  audioUnlocked = true;
   sfx.unlock();
   const out = sfx.output;
   if (out && !music.attached) {
@@ -107,6 +121,8 @@ view.scene.add(
 
 /** Simulation rate (Hz); rendering interpolates nothing yet, the beam is smooth enough. */
 const SIM_DT = 1 / 20;
+/** At or below this energy, the Keeper remarks on the fading Wisp instead. */
+const LOW_ENERGY = 3;
 let simClock = 0;
 
 let seed = 0;
@@ -140,7 +156,12 @@ function loadLevel(code: number): void {
   closeMenu();
   mood = NEUTRAL_MOOD;
   music.start(code);
+  taunts = new TauntDirector(code);
+  wasLit = false;
+  voice.stop();
+  hideTaunt();
   refresh();
+  taunt('start');
 
   const url = new URL(window.location.href);
   url.searchParams.delete('seed');
@@ -205,6 +226,11 @@ function act(intent: Intent): ActionResult {
     if (ev.type === 'scattered') music.stinger('scatter');
     if (ev.type === 'relayDrained') music.stinger(ev.remaining > 0 ? 'relay' : 'dark');
     if (ev.type === 'won') music.stinger('win');
+    if (ev.type === 'harvested' && ev.kind === 'moth') taunt('swat');
+    if (ev.type === 'transferred') taunt('transfer');
+    if (ev.type === 'scattered') taunt('scatter');
+    if (ev.type === 'relayDrained') taunt(ev.remaining > 0 ? 'relay' : 'dark');
+    if (ev.type === 'won') taunt('won');
     if (ev.type === 'placed') sfx.play('place');
     if (ev.type === 'fed') sfx.play('feed');
     if (ev.type === 'transferred') sfx.play('transfer');
@@ -357,10 +383,12 @@ function simulate(dt: number): void {
       if (ev.type === 'drained') {
         flash('−1 the light burns', true);
         sfx.play('drained');
+        taunt(world.player.energy <= LOW_ENERGY ? 'lowEnergy' : 'burn');
       }
       if (ev.type === 'leeched') {
         flash('−1 a moth feeds on you', true);
         sfx.play('leeched');
+        taunt(world.player.energy <= LOW_ENERGY ? 'lowEnergy' : 'leeched');
       }
       if (ev.type === 'spireGrew') {
         sightChanged = true;
@@ -370,11 +398,15 @@ function simulate(dt: number): void {
       if (ev.type === 'lost') {
         sfx.play('lose');
         music.stinger('lose');
+        taunt('lost');
         showEnd(ev.cause);
       }
       if (ev.type !== 'leeched') changed = true;
     }
   }
+  const lit = world.status === 'playing' && playerLit(world);
+  if (lit && !wasLit) taunt('spotted');
+  wasLit = lit;
   // Moss and Moths don't block sight; only a growing Spire changes what can be seen.
   if (sightChanged) refresh(true);
   else if (changed) refresh(false);
@@ -403,7 +435,8 @@ function updateMusic(dt: number): void {
     mood = smoothMood(mood, target, dt);
   }
   moodPanel?.show(mood);
-  music.update(mood, quiet && !moodPanel?.override);
+  // The music dips while the Keeper speaks.
+  music.update(mood, (quiet && !moodPanel?.override) || voice.speaking);
 }
 
 /** Beam hum loudness: rises as the beam approaches, full when lit. */
@@ -480,6 +513,8 @@ function showWin(): void {
 
 function openMenu(): void {
   document.exitPointerLock();
+  voice.stop();
+  hideTaunt();
   menuOpen = true;
   const stars = (n: number) => '★'.repeat(n) + '☆'.repeat(3 - n);
   const tiles = CAMPAIGN.map((s, i) => {
@@ -507,6 +542,7 @@ function openMenu(): void {
   });
   menuEl.querySelector('#toggle-sound')!.addEventListener('click', () => toggleMute());
   menuEl.querySelector('#toggle-music')!.addEventListener('click', () => toggleMusic());
+  menuEl.querySelector('#toggle-voice')!.addEventListener('click', () => toggleVoice());
   menuEl.querySelector('#reset-keys')!.addEventListener('click', () => {
     settings.keys = { ...DEFAULT_KEYS };
     saveSettings(settings);
@@ -537,6 +573,8 @@ function controlsHtml(): string {
     `<details ${controlsOpen ? 'open' : ''}><summary>controls &amp; settings</summary>` +
     `<p><button id="toggle-sound">sound: ${sfx.muted ? 'off' : 'on'}</button> ` +
     `<button id="toggle-music">music: ${music.enabled ? 'on' : 'off'}</button> ` +
+    `<button id="toggle-voice" title="${voice.voiceName ? `local voice: ${voice.voiceName}` : 'no local voice found: subtitles only'}">` +
+    `Keeper voice: ${settings.voice ? 'on' : 'off'}${voice.voiceName ? '' : ' (subtitles)'}</button> ` +
     '<button id="reset-keys">reset keys</button></p>' +
     `<table class="controls">${rows}</table>` +
     '<p class="keys">click a key, then press the new one · M, Esc and Enter are fixed · mouse: look, click harvests</p>' +
@@ -552,8 +590,42 @@ function toggleMusic(): void {
   else flash(`music ${music.enabled ? 'on' : 'off'}`);
 }
 
+function toggleVoice(): void {
+  settings.voice = !settings.voice;
+  voice.enabled = settings.voice;
+  if (!settings.voice) {
+    voice.stop();
+    hideTaunt();
+  }
+  saveSettings(settings);
+  if (menuOpen) openMenu();
+}
+
+/** Seconds to show a subtitle: roughly reading pace, at least 2.5 s. */
+const subtitleTime = (text: string) => Math.max(2.5, 1 + text.length * 0.07);
+
+/** The Keeper reacts to a game moment: maybe speaks a line, always with a subtitle. */
+function taunt(trigger: TauntTrigger): void {
+  if (!settings.voice || !audioUnlocked || menuOpen || paused) return;
+  const line = taunts.pick(trigger, world.time);
+  if (!line) return;
+  // Don't talk over a line still being spoken (story beats interrupt).
+  if (voice.speaking && !line.interrupt) return;
+  voice.say(line.text, line.interrupt);
+  tauntEl.textContent = `“${line.text}”`;
+  tauntEl.style.opacity = '1';
+  tauntTimer = subtitleTime(line.text);
+}
+
+function hideTaunt(): void {
+  tauntTimer = 0;
+  tauntEl.style.opacity = '0';
+}
+
 function toggleMute(): void {
   sfx.muted = !sfx.muted;
+  voice.muted = sfx.muted;
+  if (sfx.muted) voice.stop();
   settings.muted = sfx.muted;
   saveSettings(settings);
   if (menuOpen) openMenu();
@@ -564,6 +636,8 @@ function setPaused(next: boolean): void {
   paused = next;
   pauseEl.style.display = paused ? 'flex' : 'none';
   if (paused) {
+    voice.stop();
+    hideTaunt();
     document.exitPointerLock();
     pauseEl.innerHTML = `<h1>PAUSED</h1><p>[${K('pause')}] resume · [M] menu</p>`;
   }
@@ -671,6 +745,11 @@ view.renderer.setAnimationLoop(() => {
   relayView.animate(clock.elapsedTime);
   updateBeamUi();
   updateMusic(dt);
+  if (tauntTimer > 0) {
+    tauntTimer -= dt;
+    if (tauntTimer <= 0 && !voice.speaking) hideTaunt();
+    else if (tauntTimer <= 0) tauntTimer = 0.2;
+  }
   if (messageTimer > 0) {
     messageTimer -= dt;
     if (messageTimer <= 0) messageEl.style.opacity = '0';
@@ -691,6 +770,8 @@ if (import.meta.env.DEV) {
     spec: () => spec,
     sfx,
     music,
+    voice,
+    taunt,
     mood: () => mood,
     settings,
     refresh,

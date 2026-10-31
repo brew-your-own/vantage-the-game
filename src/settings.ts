@@ -7,6 +7,8 @@ export interface Settings {
   keys: KeyMap;
   muted: boolean;
   music: boolean;
+  /** The Keeper's spoken taunts. */
+  voice: boolean;
 }
 
 export function loadSettings(): Settings {
@@ -22,6 +24,7 @@ export function loadSettings(): Settings {
     keys: parseKeyMap(raw.keys),
     muted: raw.muted === true,
     music: raw.music !== false,
+    voice: raw.voice !== false,
   };
 }
 

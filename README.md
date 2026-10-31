@@ -33,6 +33,10 @@ Keeper's lamp out, then transfer onto the Keeper's plinth to win.
 
 All game keys can be remapped in the menu. Progress and settings are saved in the browser.
 
+The Keeper taunts you aloud, with subtitles. It speaks only with voices installed on your
+computer (never the browser's online voices), so nothing leaves your machine; with no local
+English voice you get subtitles only. Turn it off in the menu under controls & settings.
+
 ## Development
 
 ```sh
