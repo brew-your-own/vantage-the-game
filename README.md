@@ -12,4 +12,6 @@ npm install
 npm run dev      # dev server
 npm test         # unit tests
 npm run build    # static build in dist/ (GitHub Pages-ready)
+npm run curate   # re-pick the campaign levels (writes src/core/campaignData.ts)
+npm run balance  # Moth pressure on an idle Wisp, per campaign level
 ```

@@ -1,5 +1,15 @@
-import { BEAM, EYE_HEIGHT, HUSK_HEIGHT, KEEPER_HEIGHT, SHARD_HEIGHT, SPIRE_STEP } from './constants';
-import { hiddenFromLamp, pickKeeperCell, pickStartCell } from './level';
+import {
+  BEAM,
+  EYE_HEIGHT,
+  HUSK_HEIGHT,
+  KEEPER_HEIGHT,
+  PLINTH_HEIGHT,
+  RELAY_ENERGY,
+  RELAY_HEIGHT,
+  SHARD_HEIGHT,
+  SPIRE_STEP,
+} from './constants';
+import { hiddenFromLamp, pickKeeperCell, pickRelayCells, pickStartCell } from './level';
 import { Rng } from './rng';
 import { cellTop } from './surface';
 import type { Terrain } from './terrain';
@@ -88,7 +98,21 @@ export interface Keeper {
   yaw: number;
 }
 
-export type GameStatus = 'playing' | 'lost';
+export type GameStatus = 'playing' | 'lost' | 'won';
+
+/** A pylon feeding the Keeper's lamp. Drained from above, it gives up its energy. */
+export interface Relay {
+  readonly cell: number;
+  drained: boolean;
+}
+
+/** Per-level settings beyond the terrain (see core/levels.ts). */
+export interface WorldOptions {
+  /** Number of Relays to place. */
+  relays: number;
+}
+
+export const DEFAULT_OPTIONS: WorldOptions = { relays: 4 };
 
 /**
  * Everything that changes during play. Each cell holds a stack of objects, bottom first:
@@ -100,6 +124,7 @@ export interface World {
   readonly player: Player;
   readonly keeper: Keeper;
   readonly moths: Moth[];
+  readonly relays: Relay[];
   status: GameStatus;
   /** Simulated seconds since the level started. */
   time: number;
@@ -114,7 +139,7 @@ export const START_ENERGY = 10;
 /** Fraction of tiles that start with moss on them. */
 const MOSS_DENSITY = 0.1;
 
-export function createWorld(terrain: Terrain, seed: number): World {
+export function createWorld(terrain: Terrain, seed: number, options: WorldOptions = DEFAULT_OPTIONS): World {
   const stacks: Entity[][] = terrain.grid.cells.map(() => []);
   const keeperCell = pickKeeperCell(terrain, seed);
   const startCell = pickStartCell(terrain, seed, keeperCell);
@@ -132,6 +157,10 @@ export function createWorld(terrain: Terrain, seed: number): World {
     player: { cell: startCell, energy: START_ENERGY },
     keeper: { cell: keeperCell, yaw },
     moths: [],
+    relays: pickRelayCells(terrain, seed, keeperCell, startCell, options.relays).map((cell) => ({
+      cell,
+      drained: false,
+    })),
     status: 'playing',
     time: 0,
     drainClock: 0,
@@ -141,9 +170,32 @@ export function createWorld(terrain: Terrain, seed: number): World {
   spawn(world, world.player.cell, 'husk');
 
   for (let i = 0; i < terrain.grid.count; i++) {
-    if (i !== world.player.cell && i !== keeperCell && rng.next() < MOSS_DENSITY) spawn(world, i, 'moss');
+    if (i !== world.player.cell && !isStructure(world, i) && rng.next() < MOSS_DENSITY) spawn(world, i, 'moss');
   }
   return world;
+}
+
+/** The Relay standing on `cell`, if any. */
+export function relayAt(world: World, cell: number): Relay | undefined {
+  return world.relays.find((r) => r.cell === cell);
+}
+
+/** Tiles occupied by the Keeper or a Relay: nothing can be placed or laid there. */
+export function isStructure(world: World, cell: number): boolean {
+  return cell === world.keeper.cell || relayAt(world, cell) !== undefined;
+}
+
+/** Once every Relay is drained the lamp goes out: no beam, and the summit can be taken. */
+export function keeperDark(world: World): boolean {
+  return world.relays.length > 0 && world.relays.every((r) => r.drained);
+}
+
+/** The beam weakens as Relays are drained: narrower and slower. */
+export function beamParams(world: World): { halfAngle: number; speed: number } {
+  const total = world.relays.length;
+  const left = world.relays.filter((r) => !r.drained).length;
+  const f = total === 0 ? 1 : left / total;
+  return { halfAngle: BEAM.halfAngle * (0.4 + 0.6 * f), speed: BEAM.speed * (0.5 + 0.5 * f) };
 }
 
 export function spawn(world: World, cell: number, kind: EntityKind): Entity {
@@ -163,6 +215,8 @@ export function topOf(world: World, cell: number): Entity | undefined {
  */
 export function supportY(world: World, cell: number): number {
   let y = cellTop(world.terrain, cell).y;
+  if (cell === world.keeper.cell) return y + (keeperDark(world) ? PLINTH_HEIGHT : KEEPER_HEIGHT);
+  if (relayAt(world, cell)) return y + RELAY_HEIGHT;
   for (const e of world.stacks[cell]) {
     if (!isSupport(e)) break;
     y += entityHeight(e);
@@ -173,7 +227,8 @@ export function supportY(world: World, cell: number): number {
 /** World Y of the top of the solid column on a cell (blocks sight), or -Infinity if none. */
 export function columnTop(world: World, cell: number): number {
   const base = cellTop(world.terrain, cell).y;
-  if (cell === world.keeper.cell) return base + KEEPER_HEIGHT;
+  if (cell === world.keeper.cell) return base + (keeperDark(world) ? PLINTH_HEIGHT : KEEPER_HEIGHT);
+  if (relayAt(world, cell)) return base + RELAY_HEIGHT;
   let y = base;
   let top = -Infinity;
   for (const e of world.stacks[cell]) {
@@ -207,5 +262,6 @@ export function totalEnergy(world: World): number {
   let sum = world.player.energy;
   for (const stack of world.stacks) for (const e of stack) sum += entityEnergy(e);
   for (const m of world.moths) sum += m.energy;
+  for (const r of world.relays) if (!r.drained) sum += RELAY_ENERGY;
   return sum;
 }

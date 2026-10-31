@@ -46,7 +46,7 @@ export const SPIRE_FEED_COST = 1;
 /** Moss, Moths and the energy cycle between them. */
 export const ECOLOGY = {
   /** Chance per second that lit moss hatches into a Moth. */
-  hatchRate: 0.1,
+  hatchRate: 0.05,
   /** Seconds between Moth moves (one tile per move). */
   mothStep: 1.2,
   /** Radius (tiles) within which a Moth senses moss. */
@@ -60,3 +60,10 @@ export const ECOLOGY = {
   /** Radius (tiles) a settling Moth lays its moss within. */
   layRadius: 3,
 };
+
+/** Height of a Relay pylon (it blocks sight; drain it from above its top). */
+export const RELAY_HEIGHT = 1.6;
+/** Energy each Relay holds. */
+export const RELAY_ENERGY = 6;
+/** Height of the plinth the Keeper's tower sinks to once its lamp goes dark. */
+export const PLINTH_HEIGHT = 0.6;

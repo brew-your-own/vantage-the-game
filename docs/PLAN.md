@@ -77,13 +77,24 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
   energy as moss on the nearest empty tiles. **This is how moss spreads**, in clusters, while
   energy stays conserved. Harvesting a tile takes its Moth first, for all its energy, and
   you can swat a Moth on your own tile. If a Moth drains you at 0 energy, you lose.
-- Each drained Relay narrows and slows the beam, so the level gets easier as you win ground.
+- **Relays** (1.6 tall) stand on high ground, at least 4 tiles from the Keeper and the start.
+  Drain one with H: your eye must be above its top and see its top. Each drained Relay
+  narrows the beam (down to 40% of its width) and slows it (down to 50% of its speed), so
+  the level gets easier as you win ground. When the last one falls the lamp goes dark: no
+  beam, no Moths hatch, and the tower sinks to a low plinth.
 
 ### Winning, losing, scoring
 - **Lose** when your energy hits 0.
-- **Win** after all Relays are drained: transfer onto the Keeper's summit tile.
-- **Score**: stars (1–3) based on leftover energy and time taken. Stars unlock later
-  level tiers. Progress is saved locally.
+- **Win** after all Relays are drained: transfer onto the Keeper's plinth (you must see its top).
+- **Score**: 1 star for winning, +1 for 10+ energy left, +1 for finishing within par
+  (120 s + 60 s per Relay). Winning a campaign level unlocks the next. Best stars are saved
+  in localStorage (the game still works when storage is blocked).
+- **Campaign**: 20 levels picked by `npm run curate` (scripts/curate.ts): codes with a hidden
+  start and at least 20 tiles hidden from the Keeper, ordered from most cover to least.
+  3 Relays for levels 1–7, 4 for 8–14, 5 for 15–20. Any other level code is a free level
+  with 4 Relays. The menu (M) shows the level grid, stars, and a level code box.
+- **Balance**: `npm run balance` runs an idle Wisp on every campaign level for two minutes.
+  With hatchRate 0.05 it loses about 3 energy to Moths, and no idle Wisp dies in that time.
 
 ### Presentation
 - Low-poly, flat-shaded geometry. A low internal resolution scaled up, an ordered-dither
@@ -230,7 +241,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M3 | Objects & actions *(done)*   | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
 | M4 | The Keeper & beam *(done)*   | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world *(done)*        | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
-| M6 | Relays & win loop            | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
+| M6 | Relays & win loop *(done)*   | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
 | M7 | Look & SFX                   | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music               | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
 | M9 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |

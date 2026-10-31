@@ -3,20 +3,34 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type ActionResult, type Intent, SCATTER_COST, applyIntent, occludersOf } from './core/actions';
 import { cellTop } from './core/surface';
 import { DEFAULT_TERRAIN, generateTerrain } from './core/terrain';
-import { BEAM, beamEta, keeperSightTiles, lampVisibleTiles, playerLit } from './core/keeper';
+import { beamEta, keeperSightTiles, lampVisibleTiles, playerLit } from './core/keeper';
+import { CAMPAIGN, ENERGY_STAR, type LevelSpec, campaignIndex, specFor, starsFor } from './core/levels';
 import { type LossCause, step } from './core/sim';
 import { castRay, visibleCells } from './core/visibility';
-import { SPIRE_FEED_COST } from './core/constants';
-import { ENERGY, type World, createWorld, entityEnergy, mothsOn, playerEye, topOf } from './core/world';
+import { RELAY_ENERGY, SPIRE_FEED_COST } from './core/constants';
+import {
+  ENERGY,
+  type World,
+  beamParams,
+  createWorld,
+  entityEnergy,
+  keeperDark,
+  mothsOn,
+  playerEye,
+  relayAt,
+  topOf,
+} from './core/world';
+import { bestStars, recordStars, totalStars, unlocked } from './progress';
 import { LookControls } from './input/controls';
 import { EntityView } from './render/entityMeshes';
 import { MothView } from './render/mothView';
 import { KeeperView } from './render/keeperView';
+import { RelayView } from './render/relayView';
 import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/overlays';
 import { GameScene } from './render/scene';
 import { buildTerrainGeometry } from './render/terrainMesh';
 
-// M4: the Keeper and its beam on top of objects and actions.
+// M6: Relays, the dark Keeper and the summit, a curated campaign and a menu.
 // URL: ?level=<level code> (the old ?seed= is still accepted).
 // Internally a level code is the generator seed; players only ever see "level code",
 // so it is never confused with the Seed object they can plant.
@@ -29,6 +43,8 @@ const crosshair = document.getElementById('crosshair')!;
 const beamEl = document.getElementById('beam')!;
 const litEl = document.getElementById('lit')!;
 const endEl = document.getElementById('end')!;
+const relaysEl = document.getElementById('relays')!;
+const menuEl = document.getElementById('menu')!;
 const view = new GameScene(container);
 const canvas = view.renderer.domElement;
 
@@ -45,6 +61,7 @@ const keeperView = new KeeperView();
 /** Tiles where a Wisp would be in the Keeper's sight (K). Computed only while shown. */
 const keeperOverlay = new VisibilityOverlay(0xff3020, 0.4);
 const mothView = new MothView();
+const relayView = new RelayView();
 view.scene.add(
   highlight.group,
   overlay.mesh,
@@ -53,6 +70,7 @@ view.scene.add(
   entities.group,
   keeperView.group,
   mothView.group,
+  relayView.group,
 );
 
 /** Simulation rate (Hz); rendering interpolates nothing yet, the beam is smooth enough. */
@@ -60,6 +78,8 @@ const SIM_DT = 1 / 20;
 let simClock = 0;
 
 let seed = 0;
+let spec: LevelSpec;
+let menuOpen = false;
 let world: World;
 let terrainMesh: THREE.Mesh | null = null;
 /** Tiles whose ground is in view from the current body (cached until the world changes). */
@@ -68,10 +88,11 @@ let target: { cell: number; canAct: boolean } | null = null;
 let mode: 'first-person' | 'orbit' = 'first-person';
 let messageTimer = 0;
 
-function loadSeed(newSeed: number): void {
-  seed = newSeed;
+function loadLevel(code: number): void {
+  seed = code;
+  spec = specFor(code);
   const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
-  world = createWorld(terrain, seed);
+  world = createWorld(terrain, seed, { relays: spec.relays });
   if (terrainMesh) {
     view.scene.remove(terrainMesh);
     terrainMesh.geometry.dispose();
@@ -81,6 +102,7 @@ function loadSeed(newSeed: number): void {
   keeperView.build(world, view.scene);
   simClock = 0;
   endEl.style.display = 'none';
+  closeMenu();
   refresh();
 
   const url = new URL(window.location.href);
@@ -102,6 +124,7 @@ function refresh(sight = true): void {
     updateKeeperOverlay();
   }
   entities.rebuild(world);
+  relayView.rebuild(world);
   marker.position.set(eye.x, eye.y, eye.z);
   updateBodyVisibility();
   updateEnergy();
@@ -142,6 +165,10 @@ function act(intent: Intent): ActionResult {
     if (ev.type === 'placed' && intent.type === 'place') flash(`−${ev.energy} ${ev.kind}`);
     if (ev.type === 'transferred') flash('transferred');
     if (ev.type === 'scattered') flash(`scattered! −${SCATTER_COST}`);
+    if (ev.type === 'relayDrained') {
+      flash(ev.remaining > 0 ? `+${ev.energy} relay drained · ${ev.remaining} left` : 'the Keeper goes dark · take the summit');
+    }
+    if (ev.type === 'won') showWin();
   }
   if (intent.type === 'transfer') faceToward(from);
   // Moving to another body snaps the camera; only lifts in place are eased.
@@ -217,6 +244,13 @@ function pickMoth(eye: V3, dir: V3, maxDistance: number): number | null {
 }
 
 function describeTarget(cell: number): string {
+  if (cell === world.keeper.cell) {
+    return keeperDark(world) ? 'the summit · R to take it' : 'the Keeper · drain its Relays first';
+  }
+  const relay = relayAt(world, cell);
+  if (relay && mothsOn(world, cell).length === 0) {
+    return relay.drained ? 'a drained Relay' : `a Relay (worth ${RELAY_ENERGY}) · H from higher up`;
+  }
   const moths = mothsOn(world, cell);
   if (moths.length > 0) {
     const e = moths.reduce((a, m) => Math.max(a, m.energy), 0);
@@ -253,7 +287,7 @@ function updateHud(): void {
       ? 'click to look around (Esc releases) · arrows also turn'
       : `click/H harvest · 1 shard(${ENERGY.shard}) 2 husk(${ENERGY.husk}) 3 seed(${ENERGY.seed}) F feed(${SPIRE_FEED_COST}) · R transfer · X scatter(${SCATTER_COST})`,
   );
-  lines.push(`level code ${seed} · V your view · K Keeper's sight · O orbit · N new level`);
+  lines.push(`${levelLabel()} · V your view · K Keeper's sight · O orbit · M menu`);
   hud.innerText = lines.join('\n');
 }
 
@@ -280,16 +314,37 @@ function simulate(dt: number): void {
   else if (changed) refresh(false);
 }
 
+function levelLabel(): string {
+  const i = campaignIndex(seed);
+  return i >= 0 ? `level ${i + 1}/${CAMPAIGN.length} · code ${seed}` : `level code ${seed}`;
+}
+
+const clockText = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+function updateRelaysUi(): void {
+  const marks = world.relays.map((r) => (r.drained ? '◇' : '◆')).join('');
+  const time = `${clockText(world.time)} / par ${clockText(spec.par)}`;
+  relaysEl.innerHTML = `RELAYS <span class="marks">${marks}</span> · ${time}`;
+  relaysEl.className = world.time > spec.par ? 'over' : '';
+}
+
 function updateBeamUi(): void {
+  updateRelaysUi();
   if (world.status !== 'playing') {
     beamEl.textContent = '';
     litEl.style.opacity = '0';
     return;
   }
+  if (keeperDark(world)) {
+    litEl.style.opacity = '0';
+    beamEl.textContent = 'the Keeper is dark · take the summit';
+    beamEl.className = 'safe';
+    return;
+  }
   const lit = playerLit(world);
   litEl.style.opacity = lit ? String(0.55 + 0.25 * Math.sin(world.time * 8)) : '0';
   const eta = lit ? 0 : beamEta(world);
-  const sweep = (2 * Math.PI) / BEAM.speed;
+  const sweep = (2 * Math.PI) / beamParams(world).speed;
   if (lit) {
     beamEl.textContent = 'IN THE BEAM';
     beamEl.className = 'lit';
@@ -310,15 +365,84 @@ function showEnd(cause: LossCause): void {
   const why = cause === 'beam' ? 'The Keeper drained your last energy.' : 'A moth fed on your last energy.';
   endEl.innerHTML =
     `<h1>YOUR LIGHT WENT OUT</h1><p>${why}</p>` +
-    '<p>[Enter] retry this level · [N] new level</p>';
+    '<p>[Enter] retry this level · [M] menu</p>';
   endEl.style.display = 'flex';
 }
 
+function nextCode(): number {
+  const i = campaignIndex(seed);
+  return i >= 0 && i + 1 < CAMPAIGN.length ? CAMPAIGN[i + 1].code : Math.floor(Math.random() * 1_000_000);
+}
+
+function showWin(): void {
+  document.exitPointerLock();
+  const stars = starsFor(world, spec);
+  const best = recordStars(seed, stars);
+  const star = (on: boolean) => `<span class="${on ? 'on' : 'off'}">★</span>`;
+  const i = campaignIndex(seed);
+  const next = i >= 0 && i + 1 < CAMPAIGN.length ? `level ${i + 2}` : 'a new level';
+  endEl.innerHTML =
+    `<h1 class="won">THE SUMMIT IS YOURS</h1>` +
+    `<p class="stars">${star(true)}${star(world.player.energy >= ENERGY_STAR)}${star(world.time <= spec.par)}</p>` +
+    `<p>${star(true)} took the summit · ${star(world.player.energy >= ENERGY_STAR)} ${ENERGY_STAR}+ energy left (${world.player.energy})` +
+    ` · ${star(world.time <= spec.par)} within par (${clockText(world.time)} / ${clockText(spec.par)})</p>` +
+    (best ? '<p>new best!</p>' : '') +
+    `<p>[Enter] ${next} · [R] replay · [M] menu</p>`;
+  endEl.style.display = 'flex';
+}
+
+function openMenu(): void {
+  document.exitPointerLock();
+  menuOpen = true;
+  const stars = (n: number) => '★'.repeat(n) + '☆'.repeat(3 - n);
+  const tiles = CAMPAIGN.map((s, i) => {
+    const open = unlocked(i);
+    const label = open ? `<b>${i + 1}</b><span>${stars(bestStars(s.code))}</span>` : `<b>${i + 1}</b><span>locked</span>`;
+    return `<button data-code="${s.code}" ${open ? '' : 'disabled'} class="${s.code === seed ? 'current' : ''}">${label}</button>`;
+  }).join('');
+  menuEl.innerHTML =
+    '<h1>VANTAGE</h1>' +
+    '<p class="lead">Drain the Keeper’s Relays from above. When its lamp goes dark, take its summit.</p>' +
+    `<div class="levels">${tiles}</div>` +
+    `<p>${totalStars()} / ${CAMPAIGN.length * 3} stars · each level: win, keep ${ENERGY_STAR}+ energy, beat par</p>` +
+    '<form id="code-form"><label>level code <input id="code-input" inputmode="numeric" autocomplete="off" size="8"></label>' +
+    ' <button type="submit">play</button> <button type="button" id="random-level">random</button></form>' +
+    '<p class="keys">[M] or [Esc] back to the game</p>';
+  menuEl.style.display = 'flex';
+  menuEl.querySelectorAll<HTMLButtonElement>('.levels button').forEach((b) => {
+    b.addEventListener('click', () => loadLevel(Number(b.dataset.code)));
+  });
+  menuEl.querySelector('#code-form')!.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const code = Number((menuEl.querySelector('#code-input') as HTMLInputElement).value.trim());
+    if (Number.isInteger(code) && code > 0) loadLevel(code);
+  });
+  menuEl.querySelector('#random-level')!.addEventListener('click', () => loadLevel(Math.floor(Math.random() * 1_000_000)));
+}
+
+function closeMenu(): void {
+  menuOpen = false;
+  menuEl.style.display = 'none';
+}
+
 window.addEventListener('keydown', (e) => {
-  if (e.repeat) return;
+  if (e.repeat || e.target instanceof HTMLInputElement) return;
   const key = e.key.toLowerCase();
-  if (key === 'n') return loadSeed(Math.floor(Math.random() * 1_000_000));
-  if (key === 'enter' && world.status !== 'playing') return loadSeed(seed);
+  if (menuOpen) {
+    if (key === 'm' || key === 'escape') closeMenu();
+    return;
+  }
+  if (key === 'm') return openMenu();
+  if (world.status === 'won') {
+    if (key === 'enter') loadLevel(nextCode());
+    else if (key === 'r') loadLevel(seed);
+    return;
+  }
+  if (world.status === 'lost') {
+    if (key === 'enter') loadLevel(seed);
+    return;
+  }
+  if (key === 'n') return loadLevel(Math.floor(Math.random() * 1_000_000));
   if (key === 'v') return void (overlay.mesh.visible = !overlay.mesh.visible);
   if (key === 'k') {
     keeperOverlay.mesh.visible = !keeperOverlay.mesh.visible;
@@ -343,7 +467,14 @@ canvas.addEventListener('mousedown', (e) => {
 
 const query = new URLSearchParams(window.location.search);
 const param = Number(query.get('level') ?? query.get('seed'));
-loadSeed(Number.isFinite(param) && param > 0 ? param : Math.floor(Math.random() * 1_000_000));
+if (Number.isInteger(param) && param > 0) {
+  loadLevel(param);
+} else {
+  // No level asked for: show the menu over the first level not yet won.
+  const i = CAMPAIGN.findIndex((s, i) => unlocked(i) && bestStars(s.code) === 0);
+  loadLevel(CAMPAIGN[i >= 0 ? i : 0].code);
+  openMenu();
+}
 setMode('first-person');
 
 const clock = new THREE.Clock();
@@ -361,10 +492,11 @@ view.renderer.setAnimationLoop(() => {
   } else {
     orbit.update();
   }
-  simulate(dt);
+  if (!menuOpen) simulate(dt);
   keeperView.update(world, clock.elapsedTime);
   entities.animate();
   mothView.update(world, clock.elapsedTime);
+  relayView.animate(clock.elapsedTime);
   updateBeamUi();
   if (messageTimer > 0) {
     messageTimer -= dt;
@@ -382,6 +514,8 @@ if (import.meta.env.DEV) {
     world: () => world,
     target: () => target,
     act,
+    loadLevel,
+    spec: () => spec,
     refresh,
     step: (seconds: number) => {
       for (let t = 0; t < seconds; t += SIM_DT) step(world, SIM_DT);

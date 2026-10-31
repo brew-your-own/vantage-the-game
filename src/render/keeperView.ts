@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { HEX_SIZE, KEEPER_HEIGHT, TOP_INSET } from '../core/constants';
-import { BEAM, tileLit } from '../core/keeper';
+import { HEX_SIZE, KEEPER_HEIGHT, PLINTH_HEIGHT, TOP_INSET } from '../core/constants';
+import { tileLit } from '../core/keeper';
 import { cellTop } from '../core/surface';
-import type { World } from '../core/world';
+import { type World, beamParams, keeperDark } from '../core/world';
 
 const BEAM_LENGTH = 34;
 const LIT_COLOR = new THREE.Color(0.42, 0.32, 0.09);
@@ -13,6 +13,9 @@ export class KeeperView {
   readonly group = new THREE.Group();
   private readonly head = new THREE.Group();
   private readonly beam: THREE.Mesh;
+  /** Everything of the burning Keeper; hidden once it goes dark, leaving the plinth. */
+  private readonly tower = new THREE.Group();
+  private readonly plinth: THREE.Mesh;
   private tiles: THREE.InstancedMesh | null = null;
   private lampVisible: Uint8Array = new Uint8Array(0);
 
@@ -46,7 +49,12 @@ export class KeeperView {
       }),
     );
     this.beam.position.y = KEEPER_HEIGHT;
-    this.group.add(tower, gallery, this.head, this.beam);
+    this.tower.add(tower, gallery, this.head, this.beam);
+    this.plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, PLINTH_HEIGHT, 6), stone);
+    this.plinth.geometry.rotateY(Math.PI / 6);
+    this.plinth.position.y = PLINTH_HEIGHT / 2;
+    this.plinth.visible = false;
+    this.group.add(this.tower, this.plinth);
   }
 
   /** Call when the level loads. */
@@ -85,9 +93,12 @@ export class KeeperView {
   /** Call every frame. */
   update(world: World, time: number): void {
     // Three.js rotation.y turns +X toward −Z, while our yaw turns +X toward +Z.
+    const dark = keeperDark(world);
+    this.tower.visible = !dark;
+    this.plinth.visible = dark;
     this.head.rotation.y = -world.keeper.yaw;
     this.beam.rotation.y = -world.keeper.yaw;
-    const scale = Math.tan(BEAM.halfAngle) / Math.tan((15 * Math.PI) / 180);
+    const scale = Math.tan(beamParams(world).halfAngle) / Math.tan((15 * Math.PI) / 180);
     this.beam.scale.set(1, 1, scale);
     (this.beam.material as THREE.MeshBasicMaterial).opacity = 0.85 + 0.15 * Math.sin(time * 3);
 

@@ -62,3 +62,48 @@ export function pickStartCell(terrain: Terrain, seed: number, keeperCell = -1): 
   });
   return rng.pick(hiddenHalf.length > 0 ? hiddenHalf : low);
 }
+
+/**
+ * Places Relays on the upper half of the map, away from the Keeper and the start, spread
+ * out by farthest-point selection (so they pull the player across the land).
+ */
+export function pickRelayCells(
+  terrain: Terrain,
+  seed: number,
+  keeperCell: number,
+  startCell: number,
+  count: number,
+): number[] {
+  const { grid, heights } = terrain;
+  const rng = new Rng(seed ^ 0x2e1a75);
+  const sorted = [...heights].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const k = grid.cells[keeperCell];
+  const s = grid.cells[startCell];
+  const candidates: number[] = [];
+  grid.cells.forEach((c, i) => {
+    if (heights[i] >= median && hexDistance(c, k) >= 4 && hexDistance(c, s) >= 4) candidates.push(i);
+  });
+  const chosen: number[] = [];
+  while (chosen.length < count && candidates.length > 0) {
+    let pick: number;
+    if (chosen.length === 0) {
+      pick = rng.pick(candidates);
+    } else {
+      let best = -1;
+      let bestScore = -Infinity;
+      for (const c of candidates) {
+        const d = Math.min(...chosen.map((x) => hexDistance(grid.cells[x], grid.cells[c])));
+        const score = d + rng.next() * 0.5;
+        if (score > bestScore) {
+          bestScore = score;
+          best = c;
+        }
+      }
+      pick = best;
+    }
+    chosen.push(pick);
+    candidates.splice(candidates.indexOf(pick), 1);
+  }
+  return chosen;
+}

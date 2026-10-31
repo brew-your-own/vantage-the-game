@@ -25,6 +25,28 @@
              background: rgba(5,6,15,0.82); color: #e8ecff; text-align: center; }
       #end h1 { font-size: 28px; letter-spacing: 4px; color: #ff9a6a; margin: 0 0 12px; }
       #end p { margin: 4px; color: #b8c0e8; }
+      #relays { position: fixed; right: 12px; top: 30px; font-size: 13px; color: #c8b070; text-shadow: 0 0 4px #000; pointer-events: none; }
+      #relays .marks { color: #ffd36a; letter-spacing: 2px; }
+      #relays.over { color: #a08868; }
+      #end h1.won { color: #ffd36a; }
+      #end .stars { font-size: 34px; letter-spacing: 6px; }
+      .on { color: #ffd36a; } .off { color: #4a4f6a; }
+      #menu { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+              background: rgba(5,6,15,0.9); color: #e8ecff; text-align: center; padding: 16px; box-sizing: border-box; overflow-y: auto; }
+      #menu h1 { font-size: 40px; letter-spacing: 12px; color: #ffd36a; margin: 0 0 8px; }
+      #menu p { margin: 8px; color: #b8c0e8; }
+      #menu .lead { max-width: 560px; }
+      #menu .levels { display: grid; grid-template-columns: repeat(5, 84px); gap: 8px; margin: 14px 0; }
+      #menu button { font-family: monospace; background: #151a33; color: #e8ecff; border: 1px solid #3a4270; border-radius: 4px; cursor: pointer; padding: 6px 10px; }
+      #menu button:hover:not(:disabled) { border-color: #ffd36a; }
+      #menu button:disabled { opacity: 0.4; cursor: default; }
+      #menu .levels button { display: flex; flex-direction: column; align-items: center; gap: 2px; height: 56px; justify-content: center; }
+      #menu .levels button b { font-size: 18px; }
+      #menu .levels button span { color: #ffd36a; font-size: 12px; }
+      #menu .levels button.current { border-color: #7fa0c8; }
+      #menu input { font-family: monospace; background: #0b0e1f; color: #e8ecff; border: 1px solid #3a4270; border-radius: 4px; padding: 5px; }
+      #menu .keys { color: #7f88b0; font-size: 12px; }
+      @media (max-width: 500px) { #menu .levels { grid-template-columns: repeat(4, 64px); } }
       #hud { position: fixed; left: 12px; bottom: 10px; font-size: 13px; color: #9fb0ff; pointer-events: none; text-shadow: 0 0 4px #000; }
     </style>
   </head>
@@ -36,7 +58,9 @@
     <div id="message"></div>
     <div id="beam"></div>
     <div id="lit"></div>
+    <div id="relays"></div>
     <div id="end"></div>
+    <div id="menu"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

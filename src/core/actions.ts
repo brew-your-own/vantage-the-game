@@ -1,7 +1,7 @@
 import { Rng } from './rng';
 import { cellTop } from './surface';
-import { type SightTarget, canSeeCell } from './visibility';
-import { SPIRE_FEED_COST, SPIRE_GROW_TIME, SPIRE_MAX_LEVEL } from './constants';
+import { type SightTarget, canSeeCell, segmentClear } from './visibility';
+import { RELAY_ENERGY, SPIRE_FEED_COST, SPIRE_GROW_TIME, SPIRE_MAX_LEVEL } from './constants';
 import {
   ENERGY,
   type EntityKind,
@@ -10,6 +10,9 @@ import {
   columnTop,
   entityEnergy,
   isBody,
+  isStructure,
+  keeperDark,
+  relayAt,
   isSupport,
   mothsOn,
   playerEye,
@@ -30,6 +33,8 @@ export type ActionEvent =
   | { type: 'fed'; cell: number; level: number }
   | { type: 'placed'; cell: number; kind: EntityKind; energy: number }
   | { type: 'transferred'; from: number; to: number }
+  | { type: 'relayDrained'; cell: number; energy: number; remaining: number }
+  | { type: 'won' }
   | { type: 'scattered'; from: number; to: number };
 
 export type ActionResult = { ok: true; events: ActionEvent[] } | { ok: false; reason: string };
@@ -63,7 +68,14 @@ export function canAct(world: World, cell: number, sight: SightTarget = 'ground'
  */
 export function applyIntent(world: World, intent: Intent): ActionResult {
   if (world.status !== 'playing') return fail('the game is over');
-  if (intent.type !== 'scatter' && intent.cell === world.keeper.cell) return fail('the Keeper stands there');
+  if (intent.type !== 'scatter' && intent.cell === world.keeper.cell) {
+    if (intent.type === 'transfer') return takeSummit(world);
+    return fail('the Keeper stands there');
+  }
+  if (intent.type !== 'scatter' && relayAt(world, intent.cell)) {
+    if (intent.type === 'harvest' && mothsOn(world, intent.cell).length === 0) return drainRelay(world, intent.cell);
+    if (intent.type !== 'harvest') return fail('a Relay stands there');
+  }
   switch (intent.type) {
     case 'harvest':
       return harvest(world, intent.cell);
@@ -133,6 +145,36 @@ function feed(world: World, cell: number): ActionResult {
 }
 
 /**
+ * Drains a Relay. Your eye must be above its top, with a clear view of its top:
+ * Relays are fed from the Keeper and only give way to a Wisp standing higher.
+ */
+function drainRelay(world: World, cell: number): ActionResult {
+  const relay = relayAt(world, cell)!;
+  if (relay.drained) return fail('already drained');
+  const eye = playerEye(world);
+  const top = supportY(world, cell);
+  if (eye.y <= top) return fail('climb higher than the Relay to drain it');
+  const centre = cellTop(world.terrain, cell);
+  const t = { x: centre.x, y: top + 0.01, z: centre.z };
+  if (!segmentClear(world.terrain, eye, t, occludersOf(world), world.player.cell, -1, cell)) {
+    return fail('out of sight');
+  }
+  relay.drained = true;
+  world.player.energy += RELAY_ENERGY;
+  const remaining = world.relays.filter((r) => !r.drained).length;
+  return { ok: true, events: [{ type: 'relayDrained', cell, energy: RELAY_ENERGY, remaining }] };
+}
+
+/** With the lamp dark, transferring onto the Keeper's plinth wins the level. */
+function takeSummit(world: World): ActionResult {
+  if (!keeperDark(world)) return fail('the Keeper still burns: drain every Relay first');
+  if (!canAct(world, world.keeper.cell, 'surface')) return fail('climb higher to see the summit');
+  world.player.cell = world.keeper.cell;
+  world.status = 'won';
+  return { ok: true, events: [{ type: 'won' }] };
+}
+
+/**
  * Moves the Wisp into a Husk (you must see the surface it stands on) or onto a grown,
  * still Spire (seeing its tile is enough: Spires rise above your eye line).
  */
@@ -157,7 +199,7 @@ function scatter(world: World): ActionResult {
   const myBase = supportY(world, from);
   const candidates: number[] = [];
   for (let i = 0; i < world.terrain.grid.count; i++) {
-    if (world.stacks[i].length === 0 && i !== world.keeper.cell && cellTop(world.terrain, i).y < myBase) {
+    if (world.stacks[i].length === 0 && !isStructure(world, i) && cellTop(world.terrain, i).y < myBase) {
       candidates.push(i);
     }
   }

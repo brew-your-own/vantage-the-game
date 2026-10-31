@@ -4,7 +4,7 @@ export { BEAM };
 import { lampPosition } from './level';
 import { cellTop } from './surface';
 import { type Vec3, segmentClear } from './visibility';
-import { type World, columnTop, playerEye, supportY } from './world';
+import { type World, beamParams, columnTop, keeperDark, playerEye, supportY } from './world';
 
 
 const TAU = Math.PI * 2;
@@ -18,8 +18,9 @@ export function bearingFromKeeper(world: World, p: { x: number; z: number }): nu
 
 /** Is a horizontal bearing inside the beam's wedge right now? */
 export function inBeamWedge(world: World, bearing: number): boolean {
+  if (keeperDark(world)) return false;
   const d = wrap(bearing - world.keeper.yaw + Math.PI) - Math.PI;
-  return Math.abs(d) <= BEAM.halfAngle;
+  return Math.abs(d) <= beamParams(world).halfAngle;
 }
 
 /** Occluders for light: object columns, with the Keeper's own tower ignored. */
@@ -73,10 +74,11 @@ export function playerLit(world: World): boolean {
  * player at all (shadowed), otherwise the time until the beam's leading edge arrives.
  */
 export function beamEta(world: World): number | null {
-  if (!playerInLampSight(world)) return null;
+  if (keeperDark(world) || !playerInLampSight(world)) return null;
   const bearing = bearingFromKeeper(world, playerEye(world));
   if (inBeamWedge(world, bearing)) return 0;
-  return wrap(bearing - BEAM.halfAngle - world.keeper.yaw) / BEAM.speed;
+  const beam = beamParams(world);
+  return wrap(bearing - beam.halfAngle - world.keeper.yaw) / beam.speed;
 }
 
 /** Is a tile's top lit right now? `inSight` is the precomputed lamp visibility of the tile. */

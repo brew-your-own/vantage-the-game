@@ -3,7 +3,17 @@ import { hexDistance } from './hex';
 import { bearingFromKeeper, inBeamWedge, lampCanSee, playerLit } from './keeper';
 import { Rng } from './rng';
 import { cellTop } from './surface';
-import { type Moth, type World, columnTop, spawn, spawnMoth, supportY } from './world';
+import {
+  type Moth,
+  type World,
+  beamParams,
+  columnTop,
+  isStructure,
+  keeperDark,
+  spawn,
+  spawnMoth,
+  supportY,
+} from './world';
 
 export type LossCause = 'beam' | 'moth';
 
@@ -25,11 +35,13 @@ export function step(world: World, dt: number): SimEvent[] {
   const events: SimEvent[] = [];
   const rng = new Rng(world.rngState);
   world.time += dt;
-  world.keeper.yaw = (world.keeper.yaw + BEAM.speed * dt) % (Math.PI * 2);
+  // Once every Relay is drained the lamp is dark: no beam, no drain, no hatching.
+  const dark = keeperDark(world);
+  if (!dark) world.keeper.yaw = (world.keeper.yaw + beamParams(world).speed * dt) % (Math.PI * 2);
 
-  beamDrain(world, dt, rng, events);
+  if (!dark) beamDrain(world, dt, rng, events);
   growSpires(world, dt, events);
-  hatchMoss(world, dt, rng, events);
+  if (!dark) hatchMoss(world, dt, rng, events);
   moveMoths(world, dt, rng, events);
 
   world.rngState = rng.state;
@@ -171,7 +183,7 @@ function layMoss(world: World, moth: Moth, rng: Rng, mossCells: number[], events
   const here = grid.cells[moth.cell];
   const spots: { cell: number; d: number; tie: number }[] = [];
   grid.cells.forEach((c, i) => {
-    if (world.stacks[i].length === 0 && i !== world.keeper.cell && i !== world.player.cell) {
+    if (world.stacks[i].length === 0 && !isStructure(world, i) && i !== world.player.cell) {
       spots.push({ cell: i, d: Math.max(hexDistance(c, here), ECOLOGY.layRadius), tie: rng.next() });
     }
   });
@@ -192,7 +204,7 @@ function randomEmptyCell(world: World, rng: Rng): number {
   const n = world.terrain.grid.count;
   for (let attempt = 0; attempt < 64; attempt++) {
     const c = rng.int(0, n - 1);
-    if (world.stacks[c].length === 0 && c !== world.keeper.cell) return c;
+    if (world.stacks[c].length === 0 && !isStructure(world, c)) return c;
   }
   return -1;
 }
