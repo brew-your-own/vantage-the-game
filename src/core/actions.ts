@@ -1,16 +1,33 @@
 import { Rng } from './rng';
 import { cellTop } from './surface';
 import { type SightTarget, canSeeCell } from './visibility';
-import { ENERGY, type EntityKind, PLACEABLE, type World, columnTop, playerEye, spawn, supportY, topOf } from './world';
+import { SPIRE_FEED_COST, SPIRE_GROW_TIME, SPIRE_MAX_LEVEL } from './constants';
+import {
+  ENERGY,
+  type EntityKind,
+  PLACEABLE,
+  type World,
+  columnTop,
+  entityEnergy,
+  isBody,
+  isSupport,
+  mothsOn,
+  playerEye,
+  spawn,
+  supportY,
+  topOf,
+} from './world';
 
 export type Intent =
   | { type: 'harvest'; cell: number }
   | { type: 'place'; cell: number; kind: EntityKind }
+  | { type: 'feed'; cell: number }
   | { type: 'transfer'; cell: number }
   | { type: 'scatter' };
 
 export type ActionEvent =
-  | { type: 'harvested'; cell: number; kind: EntityKind; energy: number }
+  | { type: 'harvested'; cell: number; kind: EntityKind | 'moth'; energy: number }
+  | { type: 'fed'; cell: number; level: number }
   | { type: 'placed'; cell: number; kind: EntityKind; energy: number }
   | { type: 'transferred'; from: number; to: number }
   | { type: 'scattered'; from: number; to: number };
@@ -52,6 +69,8 @@ export function applyIntent(world: World, intent: Intent): ActionResult {
       return harvest(world, intent.cell);
     case 'place':
       return place(world, intent.cell, intent.kind);
+    case 'feed':
+      return feed(world, intent.cell);
     case 'transfer':
       return transfer(world, intent.cell);
     case 'scatter':
@@ -59,13 +78,25 @@ export function applyIntent(world: World, intent: Intent): ActionResult {
   }
 }
 
+/**
+ * Takes a Moth on the tile if there is one (the richest first), otherwise the top object.
+ * A Moth can be swatted even on your own tile.
+ */
 function harvest(world: World, cell: number): ActionResult {
+  const moths = mothsOn(world, cell);
+  if (moths.length > 0) {
+    if (cell !== world.player.cell && !canAct(world, cell)) return fail('out of sight');
+    const moth = moths.reduce((a, b) => (b.energy > a.energy ? b : a));
+    world.moths.splice(world.moths.indexOf(moth), 1);
+    world.player.energy += moth.energy;
+    return { ok: true, events: [{ type: 'harvested', cell, kind: 'moth', energy: moth.energy }] };
+  }
   if (cell === world.player.cell) return fail('cannot harvest where you stand');
   const top = topOf(world, cell);
   if (!top) return fail('nothing to harvest');
   if (!canAct(world, cell)) return fail('out of sight');
   world.stacks[cell].pop();
-  const energy = ENERGY[top.kind];
+  const energy = entityEnergy(top);
   world.player.energy += energy;
   return { ok: true, events: [{ type: 'harvested', cell, kind: top.kind, energy }] };
 }
@@ -74,7 +105,8 @@ function place(world: World, cell: number, kind: EntityKind): ActionResult {
   if (!PLACEABLE.includes(kind)) return fail(`cannot create ${kind}`);
   if (cell === world.player.cell) return fail('cannot build where you stand');
   const top = topOf(world, cell);
-  if (top && top.kind !== 'shard') return fail(`occupied by ${top.kind}`);
+  if (top?.kind === 'seed' && top.grow) return fail('still growing');
+  if (top && !isSupport(top)) return fail(`occupied by ${top.kind}`);
   const energy = ENERGY[kind];
   if (world.player.energy < energy) return fail(`needs ${energy} energy`);
   if (!canAct(world, cell, 'surface')) return fail('out of sight');
@@ -83,10 +115,33 @@ function place(world: World, cell: number, kind: EntityKind): ActionResult {
   return { ok: true, events: [{ type: 'placed', cell, kind, energy }] };
 }
 
+/**
+ * Feeds a Seed/Spire one unit of energy; it grows one level over SPIRE_GROW_TIME.
+ * The Spire you stand on can be fed too: it lifts you as it grows.
+ */
+function feed(world: World, cell: number): ActionResult {
+  const top = topOf(world, cell);
+  if (top?.kind !== 'seed') return fail('nothing to feed');
+  if (top.grow) return fail('still growing');
+  if ((top.level ?? 0) >= SPIRE_MAX_LEVEL) return fail('fully grown');
+  if (world.player.energy < SPIRE_FEED_COST) return fail(`needs ${SPIRE_FEED_COST} energy`);
+  if (cell !== world.player.cell && !canAct(world, cell)) return fail('out of sight');
+  world.player.energy -= SPIRE_FEED_COST;
+  top.fed = (top.fed ?? 0) + SPIRE_FEED_COST;
+  top.grow = SPIRE_GROW_TIME;
+  return { ok: true, events: [{ type: 'fed', cell, level: (top.level ?? 0) + 1 }] };
+}
+
+/**
+ * Moves the Wisp into a Husk (you must see the surface it stands on) or onto a grown,
+ * still Spire (seeing its tile is enough: Spires rise above your eye line).
+ */
 function transfer(world: World, cell: number): ActionResult {
   if (cell === world.player.cell) return fail('already here');
-  if (topOf(world, cell)?.kind !== 'husk') return fail('no husk there');
-  if (!canAct(world, cell, 'surface')) return fail('out of sight');
+  const top = topOf(world, cell);
+  if (top?.kind === 'seed' && top.grow) return fail('still growing');
+  if (!isBody(top)) return fail('no husk or spire there');
+  if (!canAct(world, cell, top?.kind === 'husk' ? 'surface' : 'ground')) return fail('out of sight');
   const from = world.player.cell;
   world.player.cell = cell; // the old body stays behind as an ordinary Husk
   return { ok: true, events: [{ type: 'transferred', from, to: cell }] };

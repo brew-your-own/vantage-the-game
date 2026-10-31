@@ -33,3 +33,30 @@ export const BEAM = {
   /** Seconds in the beam per unit of energy drained. */
   drainInterval: 1,
 };
+
+/** Height gained per Spire level (two terrain levels). */
+export const SPIRE_STEP = 2 * LEVEL_HEIGHT;
+/** Highest level a Spire can grow to. */
+export const SPIRE_MAX_LEVEL = 3;
+/** Seconds for a fed Spire to grow one level. */
+export const SPIRE_GROW_TIME = 2;
+/** Energy spent per feed (one level of growth). */
+export const SPIRE_FEED_COST = 1;
+
+/** Moss, Moths and the energy cycle between them. */
+export const ECOLOGY = {
+  /** Chance per second that lit moss hatches into a Moth. */
+  hatchRate: 0.1,
+  /** Seconds between Moth moves (one tile per move). */
+  mothStep: 1.2,
+  /** Radius (tiles) within which a Moth senses moss. */
+  mossSense: 5,
+  /** Radius (tiles) within which a Moth senses the Wisp. */
+  wispSense: 6,
+  /** Seconds per unit a Moth on the Wisp's tile drains. */
+  leechInterval: 1,
+  /** Energy at which a Moth settles and lays that much moss nearby. */
+  layAt: 5,
+  /** Radius (tiles) a settling Moth lays its moss within. */
+  layRadius: 3,
+};

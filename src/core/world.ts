@@ -1,4 +1,4 @@
-import { BEAM, EYE_HEIGHT, HUSK_HEIGHT, KEEPER_HEIGHT, SHARD_HEIGHT } from './constants';
+import { BEAM, EYE_HEIGHT, HUSK_HEIGHT, KEEPER_HEIGHT, SHARD_HEIGHT, SPIRE_STEP } from './constants';
 import { hiddenFromLamp, pickKeeperCell, pickStartCell } from './level';
 import { Rng } from './rng';
 import { cellTop } from './surface';
@@ -20,10 +20,63 @@ export const PLACEABLE: readonly EntityKind[] = ['shard', 'husk', 'seed'];
 export interface Entity {
   readonly id: number;
   readonly kind: EntityKind;
+  /** Seed/Spire: completed growth levels (0 = still a Seed). */
+  level?: number;
+  /** Seed/Spire: energy fed into it so far (each feed buys one level). */
+  fed?: number;
+  /** Seed/Spire: seconds left until the current growth level completes (0 = not growing). */
+  grow?: number;
+  /** Moss: seconds spent in the beam (for display; hatching is a per-second chance). */
+  lit?: number;
+}
+
+/** A Moth: drifts from tile to tile toward energy, eats moss, and drains the Wisp. */
+export interface Moth {
+  readonly id: number;
+  cell: number;
+  /** Tile it came from, for smooth rendering of the current move. */
+  prevCell: number;
+  energy: number;
+  /** Seconds since its last move. */
+  clock: number;
+  /** Seconds spent on the Wisp's tile since it last drained a unit. */
+  leechClock: number;
+}
+
+/** Energy stored in an entity (a Spire holds everything fed into it). */
+export function entityEnergy(e: Entity): number {
+  return ENERGY[e.kind] + (e.fed ?? 0);
+}
+
+/** Solid height an entity adds to its tile's column. */
+export function entityHeight(e: Entity): number {
+  switch (e.kind) {
+    case 'shard':
+      return SHARD_HEIGHT;
+    case 'seed':
+      return (e.level ?? 0) * SPIRE_STEP;
+    case 'husk':
+      return HUSK_HEIGHT;
+    case 'moss':
+      return 0;
+  }
+}
+
+/**
+ * Does this entity hold things up? Shards, and Spires with at least one grown level
+ * (a growing Spire still holds up its completed levels; nothing new can be put on it).
+ */
+export function isSupport(e: Entity): boolean {
+  return e.kind === 'shard' || (e.kind === 'seed' && (e.level ?? 0) > 0);
+}
+
+/** Can the Wisp inhabit this entity? Husks, and grown Spires (it stands on top). */
+export function isBody(e: Entity | undefined): boolean {
+  return e?.kind === 'husk' || (e?.kind === 'seed' && (e.level ?? 0) > 0);
 }
 
 export interface Player {
-  /** Cell the Wisp's current body (a Husk on top of that cell's stack) stands on. */
+  /** Cell of the Wisp's current body: a Husk, or a grown Spire, on top of that cell's stack. */
   cell: number;
   energy: number;
 }
@@ -46,6 +99,7 @@ export interface World {
   readonly stacks: Entity[][];
   readonly player: Player;
   readonly keeper: Keeper;
+  readonly moths: Moth[];
   status: GameStatus;
   /** Simulated seconds since the level started. */
   time: number;
@@ -77,6 +131,7 @@ export function createWorld(terrain: Terrain, seed: number): World {
     stacks,
     player: { cell: startCell, energy: START_ENERGY },
     keeper: { cell: keeperCell, yaw },
+    moths: [],
     status: 'playing',
     time: 0,
     drainClock: 0,
@@ -102,25 +157,43 @@ export function topOf(world: World, cell: number): Entity | undefined {
   return s[s.length - 1];
 }
 
-function shardCount(stack: readonly Entity[]): number {
-  let n = 0;
-  while (n < stack.length && stack[n].kind === 'shard') n++;
-  return n;
-}
-
-/** World Y of the surface on which the next object would rest (top of the Shards). */
+/**
+ * World Y of the surface on which the next object would rest: the top of the supporting
+ * objects (Shards, grown Spires) at the bottom of the stack.
+ */
 export function supportY(world: World, cell: number): number {
-  return cellTop(world.terrain, cell).y + shardCount(world.stacks[cell]) * SHARD_HEIGHT;
+  let y = cellTop(world.terrain, cell).y;
+  for (const e of world.stacks[cell]) {
+    if (!isSupport(e)) break;
+    y += entityHeight(e);
+  }
+  return y;
 }
 
 /** World Y of the top of the solid column on a cell (blocks sight), or -Infinity if none. */
 export function columnTop(world: World, cell: number): number {
-  if (cell === world.keeper.cell) return cellTop(world.terrain, cell).y + KEEPER_HEIGHT;
-  const stack = world.stacks[cell];
-  const shards = shardCount(stack);
-  const hasHusk = stack.length > shards && stack[shards].kind === 'husk';
-  if (shards === 0 && !hasHusk) return -Infinity;
-  return cellTop(world.terrain, cell).y + shards * SHARD_HEIGHT + (hasHusk ? HUSK_HEIGHT : 0);
+  const base = cellTop(world.terrain, cell).y;
+  if (cell === world.keeper.cell) return base + KEEPER_HEIGHT;
+  let y = base;
+  let top = -Infinity;
+  for (const e of world.stacks[cell]) {
+    const h = entityHeight(e);
+    if (h > 0) {
+      y += h;
+      top = y;
+    }
+  }
+  return top;
+}
+
+export function mothsOn(world: World, cell: number): Moth[] {
+  return world.moths.filter((m) => m.cell === cell);
+}
+
+export function spawnMoth(world: World, cell: number, energy: number): Moth {
+  const m: Moth = { id: world.nextId++, cell, prevCell: cell, energy, clock: 0, leechClock: 0 };
+  world.moths.push(m);
+  return m;
 }
 
 /** Eye position of the Wisp in its current body. */
@@ -129,9 +202,10 @@ export function playerEye(world: World): { x: number; y: number; z: number } {
   return { x: top.x, y: supportY(world, world.player.cell) + EYE_HEIGHT, z: top.z };
 }
 
-/** Total energy in the world: the player's reserve plus everything stored in objects. */
+/** Total energy in the world: the player's reserve plus everything in objects and Moths. */
 export function totalEnergy(world: World): number {
   let sum = world.player.energy;
-  for (const stack of world.stacks) for (const e of stack) sum += ENERGY[e.kind];
+  for (const stack of world.stacks) for (const e of stack) sum += entityEnergy(e);
+  for (const m of world.moths) sum += m.energy;
   return sum;
 }

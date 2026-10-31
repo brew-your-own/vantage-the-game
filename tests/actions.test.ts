@@ -6,6 +6,7 @@ import { castRay, canSeeCell, eyeAt } from '../src/core/visibility';
 import {
   ENERGY,
   type EntityKind,
+  isBody,
   createWorld,
   playerEye,
   spawn,
@@ -114,7 +115,7 @@ describe('transfer', () => {
     const w = flatWorld();
     const c = at(w, 2, 0);
     spawn(w, c, 'moss');
-    expect(applyIntent(w, { type: 'transfer', cell: c })).toEqual({ ok: false, reason: 'no husk there' });
+    expect(applyIntent(w, { type: 'transfer', cell: c })).toEqual({ ok: false, reason: 'no husk or spire there' });
   });
 });
 
@@ -235,7 +236,7 @@ describe('energy conservation (fuzz)', () => {
         else reasons[result.reason] = (reasons[result.reason] ?? 0) + 1;
         expect(totalEnergy(w)).toBe(total);
         expect(w.player.energy).toBeGreaterThanOrEqual(0);
-        expect(topOf(w, w.player.cell)?.kind).toBe('husk');
+        expect(isBody(topOf(w, w.player.cell))).toBe(true);
       }
       expect(succeeded, JSON.stringify(reasons)).toBeGreaterThan(300);
     }

@@ -3,11 +3,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type ActionResult, type Intent, SCATTER_COST, applyIntent, occludersOf } from './core/actions';
 import { cellTop } from './core/surface';
 import { DEFAULT_TERRAIN, generateTerrain } from './core/terrain';
-import { BEAM, beamEta, keeperSightTiles, lampVisibleTiles, playerLit, step } from './core/keeper';
+import { BEAM, beamEta, keeperSightTiles, lampVisibleTiles, playerLit } from './core/keeper';
+import { type LossCause, step } from './core/sim';
 import { castRay, visibleCells } from './core/visibility';
-import { ENERGY, type World, createWorld, playerEye, topOf } from './core/world';
+import { SPIRE_FEED_COST } from './core/constants';
+import { ENERGY, type World, createWorld, entityEnergy, mothsOn, playerEye, topOf } from './core/world';
 import { LookControls } from './input/controls';
 import { EntityView } from './render/entityMeshes';
+import { MothView } from './render/mothView';
 import { KeeperView } from './render/keeperView';
 import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/overlays';
 import { GameScene } from './render/scene';
@@ -41,7 +44,16 @@ const entities = new EntityView();
 const keeperView = new KeeperView();
 /** Tiles where a Wisp would be in the Keeper's sight (K). Computed only while shown. */
 const keeperOverlay = new VisibilityOverlay(0xff3020, 0.4);
-view.scene.add(highlight.group, overlay.mesh, keeperOverlay.mesh, marker, entities.group, keeperView.group);
+const mothView = new MothView();
+view.scene.add(
+  highlight.group,
+  overlay.mesh,
+  keeperOverlay.mesh,
+  marker,
+  entities.group,
+  keeperView.group,
+  mothView.group,
+);
 
 /** Simulation rate (Hz); rendering interpolates nothing yet, the beam is smooth enough. */
 const SIM_DT = 1 / 20;
@@ -132,6 +144,8 @@ function act(intent: Intent): ActionResult {
     if (ev.type === 'scattered') flash(`scattered! −${SCATTER_COST}`);
   }
   if (intent.type === 'transfer') faceToward(from);
+  // Moving to another body snaps the camera; only lifts in place are eased.
+  if (world.player.cell !== from) camY = playerEye(world).y;
   refresh();
   return result;
 }
@@ -163,7 +177,16 @@ function updateTarget(): void {
     return;
   }
   const eye = playerEye(world);
-  const hit = castRay(world.terrain, eye, look.direction(), occludersOf(world), world.player.cell);
+  const dir = look.direction();
+  const hit = castRay(world.terrain, eye, dir, occludersOf(world), world.player.cell);
+  // Moths in the air are targets too: the nearest one along the view ray wins if it is
+  // in front of whatever the ray hits. Its tile is the target (even our own tile).
+  const moth = pickMoth(eye, dir, hit?.distance ?? Infinity);
+  if (moth !== null) {
+    target = { cell: moth, canAct: moth === world.player.cell || visible[moth] === 1 };
+    highlight.show(world.terrain, moth, target.canAct);
+    return;
+  }
   if (!hit || hit.kind === 'slope' || hit.cell === world.player.cell) {
     target = null;
     highlight.hide();
@@ -173,15 +196,45 @@ function updateTarget(): void {
   highlight.show(world.terrain, hit.cell, target.canAct);
 }
 
+type V3 = { x: number; y: number; z: number };
+
+/** Cell of the nearest Moth within 0.45 of the view ray and closer than `maxDistance`, or null. */
+function pickMoth(eye: V3, dir: V3, maxDistance: number): number | null {
+  let best: number | null = null;
+  let bestT = maxDistance;
+  for (const m of world.moths) {
+    const p = MothView.position(world, m, clock.elapsedTime);
+    const vx = p.x - eye.x, vy = p.y - eye.y, vz = p.z - eye.z;
+    const t = vx * dir.x + vy * dir.y + vz * dir.z;
+    if (t <= 0 || t >= bestT) continue;
+    const d2 = vx * vx + vy * vy + vz * vz - t * t;
+    if (d2 < 0.45 * 0.45) {
+      best = m.cell;
+      bestT = t;
+    }
+  }
+  return best;
+}
+
 function describeTarget(cell: number): string {
+  const moths = mothsOn(world, cell);
+  if (moths.length > 0) {
+    const e = moths.reduce((a, m) => Math.max(a, m.energy), 0);
+    return `moth${moths.length > 1 ? ` ×${moths.length}` : ''} (worth ${e}) · H to swat`;
+  }
   const stack = world.stacks[cell];
   const top = topOf(world, cell);
   if (!top) return 'empty tile';
   const shards = stack.filter((e) => e.kind === 'shard').length;
   const parts = [];
   if (shards) parts.push(`${shards} shard${shards > 1 ? 's' : ''}`);
-  if (top.kind !== 'shard') parts.push(top.kind);
-  return `${parts.join(' + ')} (top worth ${ENERGY[top.kind]})`;
+  if (top.kind === 'seed') {
+    const level = top.level ?? 0;
+    parts.push(level === 0 && !top.grow ? 'seed · F to feed' : `spire L${level}${top.grow ? ' (growing)' : ''}`);
+  } else if (top.kind !== 'shard') {
+    parts.push(top.kind);
+  }
+  return `${parts.join(' + ')} (top worth ${entityEnergy(top)})`;
 }
 
 function updateHud(): void {
@@ -198,7 +251,7 @@ function updateHud(): void {
   lines.push(
     mode === 'first-person' && !look.locked
       ? 'click to look around (Esc releases) · arrows also turn'
-      : `click/H harvest · 1 shard(${ENERGY.shard}) 2 husk(${ENERGY.husk}) 3 seed(${ENERGY.seed}) · R transfer · X scatter(${SCATTER_COST})`,
+      : `click/H harvest · 1 shard(${ENERGY.shard}) 2 husk(${ENERGY.husk}) 3 seed(${ENERGY.seed}) F feed(${SPIRE_FEED_COST}) · R transfer · X scatter(${SCATTER_COST})`,
   );
   lines.push(`level code ${seed} · V your view · K Keeper's sight · O orbit · N new level`);
   hud.innerText = lines.join('\n');
@@ -208,15 +261,23 @@ function updateHud(): void {
 function simulate(dt: number): void {
   simClock += dt;
   let changed = false;
+  let sightChanged = false;
   while (simClock >= SIM_DT) {
     simClock -= SIM_DT;
     for (const ev of step(world, SIM_DT)) {
-      changed = true;
       if (ev.type === 'drained') flash('−1 the light burns', true);
-      if (ev.type === 'lost') showEnd();
+      if (ev.type === 'leeched') flash('−1 a moth feeds on you', true);
+      if (ev.type === 'spireGrew') {
+        sightChanged = true;
+        flash(`spire grew to level ${ev.level}`);
+      }
+      if (ev.type === 'lost') showEnd(ev.cause);
+      if (ev.type !== 'leeched') changed = true;
     }
   }
-  if (changed) refresh(false); // only moss appeared: sight is unchanged
+  // Moss and Moths don't block sight; only a growing Spire changes what can be seen.
+  if (sightChanged) refresh(true);
+  else if (changed) refresh(false);
 }
 
 function updateBeamUi(): void {
@@ -244,10 +305,11 @@ function updateBeamUi(): void {
   }
 }
 
-function showEnd(): void {
+function showEnd(cause: LossCause): void {
   document.exitPointerLock();
+  const why = cause === 'beam' ? 'The Keeper drained your last energy.' : 'A moth fed on your last energy.';
   endEl.innerHTML =
-    '<h1>YOUR LIGHT WENT OUT</h1><p>The Keeper drained your last energy.</p>' +
+    `<h1>YOUR LIGHT WENT OUT</h1><p>${why}</p>` +
     '<p>[Enter] retry this level · [N] new level</p>';
   endEl.style.display = 'flex';
 }
@@ -271,6 +333,7 @@ window.addEventListener('keydown', (e) => {
   else if (key === '1') act({ type: 'place', cell, kind: 'shard' });
   else if (key === '2') act({ type: 'place', cell, kind: 'husk' });
   else if (key === '3') act({ type: 'place', cell, kind: 'seed' });
+  else if (key === 'f') act({ type: 'feed', cell });
   else if (key === 'r') act({ type: 'transfer', cell });
 });
 
@@ -284,19 +347,24 @@ loadSeed(Number.isFinite(param) && param > 0 ? param : Math.floor(Math.random() 
 setMode('first-person');
 
 const clock = new THREE.Clock();
+let camY = 0;
 view.renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   if (mode === 'first-person') {
     look.update(dt);
     const eye = playerEye(world);
+    // Ease vertical changes (e.g. a Spire lifting us) instead of snapping.
+    camY = Math.abs(camY - eye.y) > 6 ? eye.y : camY + (eye.y - camY) * Math.min(1, dt * 4);
     const d = look.direction();
-    view.camera.position.set(eye.x, eye.y, eye.z);
-    view.camera.lookAt(eye.x + d.x, eye.y + d.y, eye.z + d.z);
+    view.camera.position.set(eye.x, camY, eye.z);
+    view.camera.lookAt(eye.x + d.x, camY + d.y, eye.z + d.z);
   } else {
     orbit.update();
   }
   simulate(dt);
   keeperView.update(world, clock.elapsedTime);
+  entities.animate();
+  mothView.update(world, clock.elapsedTime);
   updateBeamUi();
   if (messageTimer > 0) {
     messageTimer -= dt;

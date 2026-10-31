@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyIntent } from '../src/core/actions';
-import { HexGrid, hexDistance } from '../src/core/hex';
+import { ECOLOGY } from '../src/core/constants';
+import { hexDistance } from '../src/core/hex';
 import {
   BEAM,
   beamEta,
@@ -9,34 +10,12 @@ import {
   lampVisibleTiles,
   playerInLampSight,
   playerLit,
-  step,
 } from '../src/core/keeper';
+import { step } from '../src/core/sim';
 import { hiddenFromLamp, pickKeeperCell, pickStartCell } from '../src/core/level';
-import { DEFAULT_TERRAIN, type Terrain, generateTerrain } from '../src/core/terrain';
+import { DEFAULT_TERRAIN, generateTerrain } from '../src/core/terrain';
 import { type World, createWorld, spawn, totalEnergy } from '../src/core/world';
-
-/**
- * Flat level-1 ground with the Keeper on a level-4 plinth at (0,0) and the player at (3,0),
- * due east of it (bearing 0). The beam starts pointing at the player.
- */
-function arena(energy = 5, yaw = 0): World {
-  const grid = new HexGrid(5);
-  const heights = new Uint8Array(grid.cells.map((c) => (c.q === 0 && c.r === 0 ? 4 : 1)));
-  const terrain: Terrain = { grid, heights, params: { seed: 0, radius: 5, maxHeight: 12, maxStep: 12 } };
-  const world: World = {
-    terrain,
-    stacks: grid.cells.map(() => []),
-    player: { cell: grid.indexOf(3, 0), energy },
-    keeper: { cell: grid.indexOf(0, 0), yaw },
-    status: 'playing',
-    time: 0,
-    drainClock: 0,
-    rngState: 99,
-    nextId: 1,
-  };
-  spawn(world, world.player.cell, 'husk');
-  return world;
-}
+import { arena } from './helpers/worlds';
 
 const run = (w: World, seconds: number, dt = 0.05) => {
   const events = [];
@@ -150,7 +129,14 @@ describe('the beam', () => {
 
   it('a lit pass drains about the beam width over the speed', () => {
     const w = arena(50, -0.5);
-    run(w, 36); // one full rotation
+    // Beam only: no Moths hatching from the drained moss.
+    const rate = ECOLOGY.hatchRate;
+    ECOLOGY.hatchRate = 0;
+    try {
+      run(w, 36); // one full rotation
+    } finally {
+      ECOLOGY.hatchRate = rate;
+    }
     const expected = Math.floor((2 * BEAM.halfAngle) / BEAM.speed / BEAM.drainInterval);
     expect(50 - w.player.energy).toBeGreaterThanOrEqual(expected - 1);
     expect(50 - w.player.energy).toBeLessThanOrEqual(expected + 1);

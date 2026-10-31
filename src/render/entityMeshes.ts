@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { HUSK_HEIGHT, SHARD_HEIGHT } from '../core/constants';
+import { HUSK_HEIGHT, SHARD_HEIGHT, SPIRE_GROW_TIME, SPIRE_STEP } from '../core/constants';
 import { hash2 } from '../core/rng';
 import { cellTop } from '../core/surface';
-import { type Entity, type EntityKind, type World } from '../core/world';
+import { type Entity, type EntityKind, type World, entityHeight, isSupport } from '../core/world';
 
 const mat = (color: number, emissive = 0x000000) =>
   new THREE.MeshLambertMaterial({ color, emissive, flatShading: true });
@@ -13,6 +13,7 @@ const MATERIALS: Record<EntityKind, THREE.Material> = {
   moss: mat(0xc8f060, 0x2a3a08),
   seed: mat(0xffa040, 0x3a1800),
 };
+const SPIRE_MATERIAL = mat(0xd98a3a, 0x2a1000);
 
 function shardGeometry(): THREE.BufferGeometry {
   // Hexagonal crystal block, aligned with the pointy-top tiles.
@@ -56,6 +57,29 @@ function seedMesh(): THREE.Mesh {
   return m;
 }
 
+/** Unit-height tapered column; scaled vertically to the Spire's current height. */
+const SPIRE_GEOMETRY = (() => {
+  const g = new THREE.CylinderGeometry(0.2, 0.36, 1, 6);
+  g.rotateY(Math.PI / 6);
+  g.translate(0, 0.5, 0);
+  return g;
+})();
+
+/** A Spire: a column topped by its glowing bulb. Height is set by EntityView.animate. */
+function spireGroup(): { group: THREE.Group; column: THREE.Mesh; bulb: THREE.Mesh } {
+  const column = new THREE.Mesh(SPIRE_GEOMETRY, SPIRE_MATERIAL);
+  const bulb = seedMesh();
+  const group = new THREE.Group();
+  group.add(column, bulb);
+  return { group, column, bulb };
+}
+
+/** Current visual height of a Spire, including progress on the level it is growing. */
+export function spireVisualHeight(e: Entity): number {
+  const growing = e.grow ? 1 - e.grow / SPIRE_GROW_TIME : 0;
+  return ((e.level ?? 0) + growing) * SPIRE_STEP;
+}
+
 const SHARD_GEOMETRY = shardGeometry();
 
 function objectFor(e: Entity): THREE.Object3D {
@@ -67,7 +91,7 @@ function objectFor(e: Entity): THREE.Object3D {
     case 'moss':
       return mossGroup(e.id);
     case 'seed':
-      return seedMesh();
+      return seedMesh(); // replaced by a Spire in EntityView once fed
   }
 }
 
@@ -76,27 +100,47 @@ export class EntityView {
   readonly group = new THREE.Group();
   /** Object for the player's current body, hidden in first person. */
   playerBody: THREE.Object3D | null = null;
+  private spires: { entity: Entity; column: THREE.Mesh; bulb: THREE.Mesh }[] = [];
 
   rebuild(world: World): void {
     for (const child of this.group.children) disposeNonShared(child);
     this.group.clear();
     this.playerBody = null;
+    this.spires = [];
     world.stacks.forEach((stack, cell) => {
       const base = cellTop(world.terrain, cell);
       let y = base.y;
       stack.forEach((e, i) => {
-        const obj = objectFor(e);
+        let obj: THREE.Object3D;
+        if (e.kind === 'seed' && ((e.level ?? 0) > 0 || e.grow)) {
+          const spire = spireGroup();
+          this.spires.push({ entity: e, column: spire.column, bulb: spire.bulb });
+          obj = spire.group;
+        } else {
+          obj = objectFor(e);
+        }
         obj.position.set(base.x, y, base.z);
-        if (e.kind === 'shard') y += SHARD_HEIGHT;
+        if (isSupport(e)) y += entityHeight(e);
         this.group.add(obj);
-        if (cell === world.player.cell && i === stack.length - 1) this.playerBody = obj;
+        // Hide our own Husk in first person (a Spire under us stays visible).
+        if (cell === world.player.cell && i === stack.length - 1 && e.kind === 'husk') this.playerBody = obj;
       });
     });
+    this.animate();
+  }
+
+  /** Per-frame updates: Spires grow smoothly between simulation steps. */
+  animate(): void {
+    for (const { entity, column, bulb } of this.spires) {
+      const h = Math.max(0.05, spireVisualHeight(entity));
+      column.scale.y = h;
+      bulb.position.y = h + 0.12;
+    }
   }
 }
 
 function disposeNonShared(obj: THREE.Object3D): void {
   obj.traverse((o) => {
-    if (o instanceof THREE.Mesh && o.geometry !== SHARD_GEOMETRY) o.geometry.dispose();
+    if (o instanceof THREE.Mesh && o.geometry !== SHARD_GEOMETRY && o.geometry !== SPIRE_GEOMETRY) o.geometry.dispose();
   });
 }

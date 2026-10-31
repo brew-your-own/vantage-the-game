@@ -32,10 +32,10 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
 ### Energy (always conserved, no free energy)
 | Object        | Energy | Notes                                                    |
 |---------------|-------:|----------------------------------------------------------|
-| Lumen moss    | 1      | Grows and spreads slowly onto nearby empty flat tiles.   |
+| Lumen moss    | 1      | Spreads through Moths, and returns from beam drain (see below). |
 | Shard         | 2      | A crystal block. Shards stack to gain height.            |
 | Husk          | 3      | An empty body you can move your Wisp into.               |
-| Seed → Spire  | 2 + n  | Plant a Seed, then feed it n energy to grow it 1–3 levels.|
+| Seed → Spire  | 2 + n  | Plant a Seed (2), feed it 1 per level, up to 3 levels of 1.2 units each. |
 | Relay         | 6      | Drained from above. Dims the Keeper as each one falls.   |
 
 ### Player actions (point at a target, press a key)
@@ -44,10 +44,12 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
   the object's energy.
 - **Place** a Shard, Husk or Seed on an empty tile, or on top of a Shard stack. You must see
   the surface it will rest on, which means you can't build on a stack taller than your eye.
-- **Feed** a Spire to make it grow. Growth is gradual (≈2 s per level), so you have to
-  commit to it while the beam might be coming.
-- **Transfer** into a Husk (or onto a Spire top) whose resting surface you can see. The old
-  body stays behind as a Husk you can harvest later, and you turn to face it.
+- **Feed** (`F`) a Seed or Spire 1 energy to grow it one level (1.2 units) over 2 s, up to
+  level 3. You can feed the Spire you're standing on, and it lifts you as it grows. That's
+  a cheap but slow, exposed climb: 3.6 units for 5 energy, against 12 energy in Shards.
+- **Transfer** into a Husk whose resting surface you can see, or onto a grown Spire whose
+  tile you can see (Spires rise above your eye line, so you couldn't see their tops). The
+  old body stays behind as an object you can harvest later, and you turn to face it.
 - **Scatter** (emergency jump): costs 3 energy, which becomes a new Husk on a random empty
   tile *lower* than where you are, and you move into it. Energy stays conserved.
 - Shard stacks and Husks block line of sight. Moss and Seeds don't.
@@ -68,9 +70,13 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
   Wisp would be in the Keeper's sight, to help plan cover.
 - You start on a low tile hidden from the Keeper when one exists. Otherwise the beam has
   just swept past you, giving you a full turn to act.
-- **Moths**: lit moss slowly turns into Moths. A Moth drifts toward the largest nearby
-  cluster of energy, eats moss, and leeches energy from your Wisp if it reaches your tile.
-  You can harvest a Moth if you can see the tile it's on.
+- **Moths**: moss in the beam has a 10%-per-second chance to hatch into a Moth worth 1.
+  Every 1.2 s a Moth moves one tile toward the strongest pull of nearby moss (within 5 tiles)
+  and your Wisp (within 6, stronger the more energy you hold). It eats moss it lands on, and
+  drains you 1 per second while it shares your tile. At 5 energy it settles, laying its
+  energy as moss on the nearest empty tiles. **This is how moss spreads**, in clusters, while
+  energy stays conserved. Harvesting a tile takes its Moth first, for all its energy, and
+  you can swat a Moth on your own tile. If a Moth drains you at 0 energy, you lose.
 - Each drained Relay narrows and slows the beam, so the level gets easier as you win ground.
 
 ### Winning, losing, scoring
@@ -223,7 +229,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M2 | First-person + picking *(done)* | Wisp eye at a start tile, mouse look, crosshair picks tile/entity, LOS highlighting (green = can act, red = can't). |
 | M3 | Objects & actions *(done)*   | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
 | M4 | The Keeper & beam *(done)*   | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
-| M5 | Living world                 | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
+| M5 | Living world *(done)*        | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
 | M6 | Relays & win loop            | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
 | M7 | Look & SFX                   | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music               | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |

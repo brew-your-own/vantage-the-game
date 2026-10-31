@@ -2,10 +2,9 @@ import { BEAM, EYE_HEIGHT } from './constants';
 
 export { BEAM };
 import { lampPosition } from './level';
-import { Rng } from './rng';
 import { cellTop } from './surface';
 import { type Vec3, segmentClear } from './visibility';
-import { type World, columnTop, playerEye, spawn, supportY } from './world';
+import { type World, columnTop, playerEye, supportY } from './world';
 
 
 const TAU = Math.PI * 2;
@@ -94,48 +93,4 @@ export function lampVisibleTiles(world: World): Uint8Array {
     out[i] = lampCanSee(world, { x: t.x, y: t.y + 0.02, z: t.z }, i) ? 1 : 0;
   }
   return out;
-}
-
-export type SimEvent =
-  | { type: 'drained'; energy: number; mossCell: number }
-  | { type: 'lost' };
-
-/** Fixed simulation step. Rotates the beam and drains the player while lit. */
-export function step(world: World, dt: number): SimEvent[] {
-  if (world.status !== 'playing') return [];
-  const events: SimEvent[] = [];
-  world.time += dt;
-  world.keeper.yaw = wrap(world.keeper.yaw + BEAM.speed * dt);
-
-  if (!playerLit(world)) {
-    world.drainClock = 0;
-    return events;
-  }
-  world.drainClock += dt;
-  while (world.drainClock >= BEAM.drainInterval) {
-    world.drainClock -= BEAM.drainInterval;
-    if (world.player.energy <= 0) {
-      world.status = 'lost';
-      events.push({ type: 'lost' });
-      break;
-    }
-    // Energy is conserved: the drained unit falls back to the land as moss.
-    world.player.energy -= 1;
-    const mossCell = randomEmptyCell(world);
-    if (mossCell >= 0) spawn(world, mossCell, 'moss');
-    events.push({ type: 'drained', energy: 1, mossCell });
-  }
-  return events;
-}
-
-function randomEmptyCell(world: World): number {
-  const rng = new Rng(world.rngState);
-  const n = world.terrain.grid.count;
-  let found = -1;
-  for (let attempt = 0; attempt < 64 && found < 0; attempt++) {
-    const c = rng.int(0, n - 1);
-    if (world.stacks[c].length === 0 && c !== world.keeper.cell) found = c;
-  }
-  world.rngState = rng.state;
-  return found;
 }
