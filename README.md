@@ -5,6 +5,8 @@ browser. It runs fully locally, with no server.
 
 **Play it: https://brew-your-own.github.io/vantage-the-game/**
 
+![Orbit view of a level: a hex landscape with the Keeper's beam sweeping from its tower, Relays standing on the hills and Moths over the moss](docs/screenshot.jpg)
+
 ## How to play
 
 You are a Wisp on a hex landscape watched by the Keeper, whose lamp sweeps a beam across
