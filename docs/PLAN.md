@@ -63,10 +63,49 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
 ### Presentation
 - Low-poly, flat-shaded geometry. A low internal resolution scaled up, an ordered-dither
   post-process, and a limited palette that changes per level for an 80s look.
-- Audio is synthesized at runtime with WebAudio (drones, beam hum, harvest blips), so
-  there are no audio asset files.
+- Sound effects are synthesized at runtime with WebAudio (beam hum, harvest blips,
+  transfer whoosh). There are no audio asset files.
+- Music is also generated from code and adapts to what is happening in the game. See below.
 - Controls: mouse look with pointer lock, keyboard actions, and a crosshair. Keys can be
   remapped.
+
+### Adaptive music
+All music is composed and synthesized at runtime: no samples, no audio files, no MIDI
+files. Each level's seed sets its own **musical identity**: key, mode, tempo (around
+60–90 BPM), a 4–8 bar chord progression and a short motif. Each level sounds different
+but stays the same every time you play it.
+
+The music is built from **layers** (stems) that fade in and out and change character as
+the game state changes:
+
+| Layer       | Role                                                   |
+|-------------|--------------------------------------------------------|
+| Drone / pad | Always on. Slow-moving chords and the level's base mood. |
+| Bass pulse  | A heartbeat-like pulse that follows the chord roots.   |
+| Arpeggio    | Movement and momentum. Gets busier as you make progress. |
+| Motif       | The level's melody. Played sparsely, varied each time. |
+| Percussion  | Soft noise ticks and thumps. Mostly appears under pressure. |
+| Tension     | Dissonant clusters, risers, and filtered noise.        |
+
+**Mood signals.** Each tick, the game state is turned into a small set of numbers between
+0 and 1. These are smoothed over time so the music never jumps abruptly.
+
+| Signal       | Comes from                                            | What the music does                              |
+|--------------|-------------------------------------------------------|--------------------------------------------------|
+| `exposure`   | Being in the beam (1), or how soon the beam will reach you | A riser and opening filter as the beam approaches. In the beam: dissonant cluster, louder percussion, faster pulse. |
+| `lowEnergy`  | Your energy below a threshold                         | Shifts to a darker mode (e.g. Phrygian). Layers thin out, pitch wavers slightly, a heartbeat comes in, and the tempo drifts slower. |
+| `threat`     | Moths near you, and how close they are                | Staccato figures in a high register, a stuttering arpeggio. |
+| `progress`   | Fraction of Relays drained                            | Moves further through the chord progression, adds more layers, brighter harmonies. |
+| `altitude`   | Your height relative to the Keeper                    | Higher register, more open voicings, more reverb. |
+| `calm`       | Out of the beam, safe energy, no Moths nearby         | Sparse ambient mode: just the pad and an occasional motif. |
+
+**Event stingers**: short one-off phrases for a Relay drained, a transfer, a Scatter
+jump, a Moth harvested, a win (the progression resolves to a final cadence) and a loss
+(the music winds down in pitch and fades out).
+
+**Musical rules.** Changes to harmony and layers only happen on beat or bar boundaries,
+so the music stays in time. Volume, filter and reverb changes are smoothed continuously.
+Stingers are timed to the next beat.
 
 ---
 
@@ -117,7 +156,16 @@ src/
     hud.ts              # energy bar, relay count, beam warning, action hints
     menus.ts            # title, level select (seed entry), pause, win/lose
   audio/
-    synth.ts            # WebAudio procedural sounds
+    context.ts          # shared AudioContext; resume on first user gesture; suspend when tab hidden
+    sfx.ts              # procedural sound effects
+    music/
+      mood.ts           # pure: GameState → MoodVector (smoothed signals in 0..1)
+      theory.ts         # pure: scales, modes, chords, voice leading, seeded progressions
+      composer.ts       # pure: (level identity, bar index, mood) → note events for the next bar
+      scheduler.ts      # look-ahead clock: schedules ~100 ms ahead on the AudioContext clock
+      instruments.ts    # WebAudio voices: subtractive pad, FM bell, plucked string, noise drum
+      mixer.ts          # layer buses, generated reverb, master compressor, music/SFX volume
+      music.ts          # public interface: start(level), update(mood), stinger(event), stop()
   main.ts               # bootstrap: wires core ↔ render ↔ input ↔ ui
 ```
 
@@ -136,6 +184,12 @@ state. The renderer reads state and never changes it.
   inside the cone. It is only recomputed for tiles the cone sweeps across each tick.
 - **Moth steering**: greedy hex-neighbour steps toward the highest-energy cluster within
   radius R, with a little seeded randomness.
+- **Music scheduling**: a `setTimeout` loop wakes about every 25 ms and schedules notes
+  ~100 ms ahead on `AudioContext.currentTime`. This keeps timing tight even when frames
+  drop. The composer works one bar at a time using the latest mood. It is pure code that
+  returns plain note events, so it can be tested without any audio. Voices are capped at
+  about 24 and short-lived nodes are cleaned up automatically. Reverb comes from a
+  generated noise impulse response, not a file.
 
 ---
 
@@ -152,9 +206,14 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M4 | The Keeper & beam            | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world                 | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
 | M6 | Relays & win loop            | Relays dim the beam, summit win, star scoring, seed codes, level select, localStorage progress. |
-| M7 | Look & sound                 | Low-res + dither post-process, per-level palettes, synthesized audio, title/pause menus, key remapping. |
-| M8 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
-| M9 | Polish (stretch)             | Tutorial level, balance pass, accessibility (colour-blind palettes, reduced motion), gamepad. |
+| M7 | Look & SFX                   | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |
+| M8 | Adaptive music               | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
+| M9 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
+| M10| Polish (stretch)             | Tutorial level, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |
+
+Music comes after M6 because it needs the full set of game signals (beam, Moths, Relays,
+win/lose) to react to. `music/theory.ts` and `music/composer.ts` are pure code with no
+game dependencies, so they can be started earlier, alongside M4–M6, if useful.
 
 ---
 
@@ -163,13 +222,19 @@ Each milestone ends in something playable or testable, and gets its own commit o
   invariants (connectivity, minimum flat tiles), LOS edge cases, rules for every action,
   and energy conservation (total energy in the world plus the player stays the same,
   except for beam drain, which is tracked).
+- **Music unit tests**: the same seed always gives the same musical identity. Generated
+  notes stay in the scale, except deliberate tension notes. Harmony changes land only on
+  bar boundaries. The mood mapping is monotonic (e.g. more exposure never lowers tension).
+  Smoothing never jumps.
+- **Music smoke test**: render a few bars with `OfflineAudioContext` and check the output
+  is not silent and never clips.
 - **Simulation replay tests**: a seed plus a scripted list of intents must always produce
   the same final state.
 - **Manual playtest** each milestone with `npm run dev`.
 
 ---
 
-## 6. Deployment (M8)
+## 6. Deployment (M9)
 1. In the repo settings, set Pages → Source to **GitHub Actions**.
 2. Add `.github/workflows/deploy.yml`: on push to `main`, run `npm ci && npm test && npm run build`,
    then `actions/upload-pages-artifact` (from `dist/`) → `actions/deploy-pages`.
@@ -183,3 +248,6 @@ Each milestone ends in something playable or testable, and gets its own commit o
 - Keyboard and mouse only, or touch controls too?
 - How strict should the retro look be (very low resolution and harsh dither) versus a
   cleaner modern low-poly style? We could offer both as a setting.
+- Musical direction: dark ambient and minimalist (drones, sparse motifs), or a more
+  melodic 80s synth sound (arpeggios up front)? *(Proposed: dark ambient by default,
+  with arpeggios coming in as you make progress.)*
