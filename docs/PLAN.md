@@ -97,10 +97,18 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
   With hatchRate 0.05 it loses about 3 energy to Moths, and no idle Wisp dies in that time.
 
 ### Presentation
-- Low-poly, flat-shaded geometry. A low internal resolution scaled up, an ordered-dither
-  post-process, and a limited palette that changes per level for an 80s look.
-- Sound effects are synthesized at runtime with WebAudio (beam hum, harvest blips,
-  transfer whoosh). There are no audio asset files.
+- Low-poly, flat-shaded geometry. The scene is drawn at 300 lines, scaled up with
+  nearest-neighbour sampling, and dithered (4×4 Bayer) down to a 6-level-per-channel
+  colour cube for an 80s look. G toggles it.
+- Each level code picks one of 8 palettes (meadow, dune, tundra, ember, lichen, violet,
+  reef, slate) for land, sky, stars and light.
+- Sound effects are synthesized at runtime with WebAudio: a beam hum that swells as the beam
+  approaches, blips for harvesting, thuds for placing, a whoosh for transfer, chimes for
+  Relays, a cadence for the win, a falling tone for the loss. There are no audio asset
+  files. U mutes.
+- Pause with P (also automatic when the tab is hidden). The menu (M) has a controls &
+  settings panel: every action key can be remapped (keys swap on conflict; M, Esc and
+  Enter are fixed). Settings are kept in localStorage.
 - Music is also generated from code and adapts to what is happening in the game. See below.
 - Controls: mouse look with pointer lock, keyboard actions, and a crosshair. Keys can be
   remapped.
@@ -242,7 +250,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M4 | The Keeper & beam *(done)*   | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world *(done)*        | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
 | M6 | Relays & win loop *(done)*   | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
-| M7 | Look & SFX                   | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |
+| M7 | Look & SFX *(done)*          | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music               | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
 | M9 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
 | M10| Polish (stretch)             | Tutorial level, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |

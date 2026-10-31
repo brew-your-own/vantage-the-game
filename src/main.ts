@@ -26,11 +26,15 @@ import { EntityView } from './render/entityMeshes';
 import { MothView } from './render/mothView';
 import { KeeperView } from './render/keeperView';
 import { RelayView } from './render/relayView';
+import { paletteFor } from './render/palettes';
+import { Sfx } from './audio/sfx';
+import { ACTIONS, ACTION_LABELS, DEFAULT_KEYS, type GameAction, actionFor, keyLabel, rebind } from './input/keymap';
+import { loadSettings, saveSettings } from './settings';
 import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/overlays';
 import { GameScene } from './render/scene';
 import { buildTerrainGeometry } from './render/terrainMesh';
 
-// M6: Relays, the dark Keeper and the summit, a curated campaign and a menu.
+// M7: retro look (low-res + dither), per-level palettes, sound effects, pause, key remapping.
 // URL: ?level=<level code> (the old ?seed= is still accepted).
 // Internally a level code is the generator seed; players only ever see "level code",
 // so it is never confused with the Seed object they can plant.
@@ -45,8 +49,18 @@ const litEl = document.getElementById('lit')!;
 const endEl = document.getElementById('end')!;
 const relaysEl = document.getElementById('relays')!;
 const menuEl = document.getElementById('menu')!;
+const pauseEl = document.getElementById('pause')!;
 const view = new GameScene(container);
 const canvas = view.renderer.domElement;
+const settings = loadSettings();
+view.retro = settings.retro;
+const sfx = new Sfx();
+sfx.muted = settings.muted;
+/** The action waiting for a new key in the controls menu, if any. */
+let rebinding: GameAction | null = null;
+let controlsOpen = false;
+let paused = false;
+const K = (a: GameAction) => keyLabel(settings.keys[a]);
 
 const look = new LookControls(canvas);
 const orbit = new OrbitControls(view.camera, canvas);
@@ -93,11 +107,14 @@ function loadLevel(code: number): void {
   spec = specFor(code);
   const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
   world = createWorld(terrain, seed, { relays: spec.relays });
+  const palette = paletteFor(code);
+  view.applyPalette(palette);
+  setPaused(false);
   if (terrainMesh) {
     view.scene.remove(terrainMesh);
     terrainMesh.geometry.dispose();
   }
-  terrainMesh = new THREE.Mesh(buildTerrainGeometry(terrain), terrainMaterial);
+  terrainMesh = new THREE.Mesh(buildTerrainGeometry(terrain, palette), terrainMaterial);
   view.scene.add(terrainMesh);
   keeperView.build(world, view.scene);
   simClock = 0;
@@ -158,9 +175,17 @@ function act(intent: Intent): ActionResult {
   const result = applyIntent(world, intent);
   if (!result.ok) {
     flash(result.reason, true);
+    sfx.play('fail');
     return result;
   }
   for (const ev of result.events) {
+    if (ev.type === 'harvested') sfx.play(ev.kind === 'moth' ? 'swat' : 'harvest');
+    if (ev.type === 'placed') sfx.play('place');
+    if (ev.type === 'fed') sfx.play('feed');
+    if (ev.type === 'transferred') sfx.play('transfer');
+    if (ev.type === 'scattered') sfx.play('scatter');
+    if (ev.type === 'relayDrained') sfx.play(ev.remaining > 0 ? 'relay' : 'dark');
+    if (ev.type === 'won') sfx.play('win');
     if (ev.type === 'harvested') flash(`+${ev.energy} ${ev.kind}`);
     if (ev.type === 'placed' && intent.type === 'place') flash(`−${ev.energy} ${ev.kind}`);
     if (ev.type === 'transferred') flash('transferred');
@@ -285,9 +310,14 @@ function updateHud(): void {
   lines.push(
     mode === 'first-person' && !look.locked
       ? 'click to look around (Esc releases) · arrows also turn'
-      : `click/H harvest · 1 shard(${ENERGY.shard}) 2 husk(${ENERGY.husk}) 3 seed(${ENERGY.seed}) F feed(${SPIRE_FEED_COST}) · R transfer · X scatter(${SCATTER_COST})`,
+      : `click/${K('harvest')} harvest · ${K('shard')} shard(${ENERGY.shard}) ${K('husk')} husk(${ENERGY.husk}) ` +
+          `${K('seed')} seed(${ENERGY.seed}) ${K('feed')} feed(${SPIRE_FEED_COST}) · ${K('transfer')} transfer · ` +
+          `${K('scatter')} scatter(${SCATTER_COST})`,
   );
-  lines.push(`${levelLabel()} · V your view · K Keeper's sight · O orbit · M menu`);
+  lines.push(
+    `${levelLabel()} · ${K('yourView')} your view · ${K('keeperSight')} Keeper's sight · ${K('orbit')} orbit · ` +
+      `${K('pause')} pause · ${K('mute')} sound ${sfx.muted ? 'off' : 'on'} · M menu`,
+  );
   hud.innerText = lines.join('\n');
 }
 
@@ -299,13 +329,23 @@ function simulate(dt: number): void {
   while (simClock >= SIM_DT) {
     simClock -= SIM_DT;
     for (const ev of step(world, SIM_DT)) {
-      if (ev.type === 'drained') flash('−1 the light burns', true);
-      if (ev.type === 'leeched') flash('−1 a moth feeds on you', true);
+      if (ev.type === 'drained') {
+        flash('−1 the light burns', true);
+        sfx.play('drained');
+      }
+      if (ev.type === 'leeched') {
+        flash('−1 a moth feeds on you', true);
+        sfx.play('leeched');
+      }
       if (ev.type === 'spireGrew') {
         sightChanged = true;
+        sfx.play('grew');
         flash(`spire grew to level ${ev.level}`);
       }
-      if (ev.type === 'lost') showEnd(ev.cause);
+      if (ev.type === 'lost') {
+        sfx.play('lose');
+        showEnd(ev.cause);
+      }
       if (ev.type !== 'leeched') changed = true;
     }
   }
@@ -328,8 +368,17 @@ function updateRelaysUi(): void {
   relaysEl.className = world.time > spec.par ? 'over' : '';
 }
 
+/** Beam hum loudness: rises as the beam approaches, full when lit. */
+function beamLevel(): number {
+  if (world.status !== 'playing' || paused || menuOpen || keeperDark(world)) return 0;
+  if (playerLit(world)) return 1;
+  const eta = beamEta(world);
+  return eta !== null && eta < 8 ? 0.35 * (1 - eta / 8) : 0;
+}
+
 function updateBeamUi(): void {
   updateRelaysUi();
+  sfx.setBeam(beamLevel());
   if (world.status !== 'playing') {
     beamEl.textContent = '';
     litEl.style.opacity = '0';
@@ -407,8 +456,24 @@ function openMenu(): void {
     `<p>${totalStars()} / ${CAMPAIGN.length * 3} stars · each level: win, keep ${ENERGY_STAR}+ energy, beat par</p>` +
     '<form id="code-form"><label>level code <input id="code-input" inputmode="numeric" autocomplete="off" size="8"></label>' +
     ' <button type="submit">play</button> <button type="button" id="random-level">random</button></form>' +
+    controlsHtml() +
     '<p class="keys">[M] or [Esc] back to the game</p>';
   menuEl.style.display = 'flex';
+  const details = menuEl.querySelector('details')!;
+  details.addEventListener('toggle', () => (controlsOpen = details.open));
+  menuEl.querySelectorAll<HTMLButtonElement>('button[data-action]').forEach((b) => {
+    b.addEventListener('click', () => {
+      rebinding = b.dataset.action as GameAction;
+      b.textContent = 'press a key…';
+    });
+  });
+  menuEl.querySelector('#toggle-sound')!.addEventListener('click', () => toggleMute());
+  menuEl.querySelector('#toggle-retro')!.addEventListener('click', () => toggleRetro());
+  menuEl.querySelector('#reset-keys')!.addEventListener('click', () => {
+    settings.keys = { ...DEFAULT_KEYS };
+    saveSettings(settings);
+    openMenu();
+  });
   menuEl.querySelectorAll<HTMLButtonElement>('.levels button').forEach((b) => {
     b.addEventListener('click', () => loadLevel(Number(b.dataset.code)));
   });
@@ -422,10 +487,60 @@ function openMenu(): void {
 
 function closeMenu(): void {
   menuOpen = false;
+  rebinding = null;
   menuEl.style.display = 'none';
 }
 
+function controlsHtml(): string {
+  const rows = ACTIONS.map(
+    (a) => `<tr><td>${ACTION_LABELS[a]}</td><td><button data-action="${a}">${K(a)}</button></td></tr>`,
+  ).join('');
+  return (
+    `<details ${controlsOpen ? 'open' : ''}><summary>controls &amp; settings</summary>` +
+    `<p><button id="toggle-sound">sound: ${sfx.muted ? 'off' : 'on'}</button> ` +
+    `<button id="toggle-retro">retro look: ${view.retro ? 'on' : 'off'}</button> ` +
+    '<button id="reset-keys">reset keys</button></p>' +
+    `<table class="controls">${rows}</table>` +
+    '<p class="keys">click a key, then press the new one · M, Esc and Enter are fixed · mouse: look, click harvests</p>' +
+    '</details>'
+  );
+}
+
+function toggleMute(): void {
+  sfx.muted = !sfx.muted;
+  settings.muted = sfx.muted;
+  saveSettings(settings);
+  if (menuOpen) openMenu();
+  else flash(`sound ${sfx.muted ? 'off' : 'on'}`);
+}
+
+function toggleRetro(): void {
+  view.retro = !view.retro;
+  settings.retro = view.retro;
+  saveSettings(settings);
+  if (menuOpen) openMenu();
+  else flash(`retro look ${view.retro ? 'on' : 'off'}`);
+}
+
+function setPaused(next: boolean): void {
+  paused = next;
+  pauseEl.style.display = paused ? 'flex' : 'none';
+  if (paused) {
+    document.exitPointerLock();
+    pauseEl.innerHTML = `<h1>PAUSED</h1><p>[${K('pause')}] resume · [M] menu</p>`;
+  }
+}
+
 window.addEventListener('keydown', (e) => {
+  sfx.unlock();
+  if (rebinding) {
+    e.preventDefault();
+    if (e.key !== 'Escape') settings.keys = rebind(settings.keys, rebinding, e.key);
+    saveSettings(settings);
+    rebinding = null;
+    sfx.play('click');
+    return openMenu();
+  }
   if (e.repeat || e.target instanceof HTMLInputElement) return;
   const key = e.key.toLowerCase();
   if (menuOpen) {
@@ -433,6 +548,9 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (key === 'm') return openMenu();
+  const action = actionFor(settings.keys, e.key);
+  if (action === 'mute') return toggleMute();
+  if (action === 'retro') return toggleRetro();
   if (world.status === 'won') {
     if (key === 'enter') loadLevel(nextCode());
     else if (key === 'r') loadLevel(seed);
@@ -442,24 +560,36 @@ window.addEventListener('keydown', (e) => {
     if (key === 'enter') loadLevel(seed);
     return;
   }
-  if (key === 'n') return loadLevel(Math.floor(Math.random() * 1_000_000));
-  if (key === 'v') return void (overlay.mesh.visible = !overlay.mesh.visible);
-  if (key === 'k') {
+  if (paused) {
+    if (action === 'pause') setPaused(false);
+    return;
+  }
+  if (action === 'pause') return setPaused(true);
+  if (action === 'newLevel') return loadLevel(Math.floor(Math.random() * 1_000_000));
+  if (action === 'yourView') return void (overlay.mesh.visible = !overlay.mesh.visible);
+  if (action === 'keeperSight') {
     keeperOverlay.mesh.visible = !keeperOverlay.mesh.visible;
     return updateKeeperOverlay();
   }
-  if (key === 'o') return setMode(mode === 'orbit' ? 'first-person' : 'orbit');
+  if (action === 'orbit') return setMode(mode === 'orbit' ? 'first-person' : 'orbit');
   if (mode !== 'first-person') return;
-  if (key === 'x') return void act({ type: 'scatter' });
+  if (action === 'scatter') return void act({ type: 'scatter' });
   if (!target) return;
   const cell = target.cell;
-  if (key === 'h') act({ type: 'harvest', cell });
-  else if (key === '1') act({ type: 'place', cell, kind: 'shard' });
-  else if (key === '2') act({ type: 'place', cell, kind: 'husk' });
-  else if (key === '3') act({ type: 'place', cell, kind: 'seed' });
-  else if (key === 'f') act({ type: 'feed', cell });
-  else if (key === 'r') act({ type: 'transfer', cell });
+  if (action === 'harvest') act({ type: 'harvest', cell });
+  else if (action === 'shard') act({ type: 'place', cell, kind: 'shard' });
+  else if (action === 'husk') act({ type: 'place', cell, kind: 'husk' });
+  else if (action === 'seed') act({ type: 'place', cell, kind: 'seed' });
+  else if (action === 'feed') act({ type: 'feed', cell });
+  else if (action === 'transfer') act({ type: 'transfer', cell });
 });
+
+// Leaving the tab pauses a running level.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && world.status === 'playing' && !menuOpen) setPaused(true);
+});
+
+window.addEventListener('pointerdown', () => sfx.unlock());
 
 canvas.addEventListener('mousedown', (e) => {
   if (mode === 'first-person' && look.locked && e.button === 0 && target) act({ type: 'harvest', cell: target.cell });
@@ -492,7 +622,7 @@ view.renderer.setAnimationLoop(() => {
   } else {
     orbit.update();
   }
-  if (!menuOpen) simulate(dt);
+  if (!menuOpen && !paused) simulate(dt);
   keeperView.update(world, clock.elapsedTime);
   entities.animate();
   mothView.update(world, clock.elapsedTime);
@@ -516,6 +646,8 @@ if (import.meta.env.DEV) {
     act,
     loadLevel,
     spec: () => spec,
+    sfx,
+    settings,
     refresh,
     step: (seconds: number) => {
       for (let t = 0; t < seconds; t += SIM_DT) step(world, SIM_DT);

@@ -47,6 +47,14 @@
       #menu input { font-family: monospace; background: #0b0e1f; color: #e8ecff; border: 1px solid #3a4270; border-radius: 4px; padding: 5px; }
       #menu .keys { color: #7f88b0; font-size: 12px; }
       @media (max-width: 500px) { #menu .levels { grid-template-columns: repeat(4, 64px); } }
+      #pause { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+               background: rgba(5,6,15,0.6); color: #e8ecff; pointer-events: none; }
+      #pause h1 { letter-spacing: 8px; color: #c8d0ff; margin: 0 0 8px; }
+      #menu details { margin-top: 6px; max-width: 520px; }
+      #menu summary { cursor: pointer; color: #c8d0ff; }
+      #menu table.controls { margin: 8px auto; border-collapse: collapse; font-size: 13px; }
+      #menu table.controls td { padding: 2px 8px; text-align: left; color: #b8c0e8; }
+      #menu table.controls button { min-width: 72px; }
       #hud { position: fixed; left: 12px; bottom: 10px; font-size: 13px; color: #9fb0ff; pointer-events: none; text-shadow: 0 0 4px #000; }
     </style>
   </head>
@@ -60,6 +68,7 @@
     <div id="lit"></div>
     <div id="relays"></div>
     <div id="end"></div>
+    <div id="pause"></div>
     <div id="menu"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

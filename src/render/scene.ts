@@ -1,11 +1,19 @@
 import * as THREE from 'three';
 import { Rng } from '../core/rng';
+import type { LevelPalette } from './palettes';
+import { RetroPass } from './retro';
 
 /** Renderer, scene, camera and lights, with resizing handled. */
 export class GameScene {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 400);
+  /** Low resolution + ordered dither. On by default; G toggles it. */
+  retro = true;
+  private readonly retroPass = new RetroPass();
+  private readonly hemi = new THREE.HemisphereLight(0xc8d8ff, 0x302018, 0.9);
+  private readonly sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
+  private readonly stars: THREE.Points;
 
   constructor(private readonly container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -13,25 +21,35 @@ export class GameScene {
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x05060f);
-    this.scene.add(new THREE.HemisphereLight(0xc8d8ff, 0x302018, 0.9));
-    const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
-    sun.position.set(40, 30, 15);
-    this.scene.add(sun);
-    this.scene.add(createStarfield(new Rng(0x5eed)));
+    this.scene.add(this.hemi);
+    this.sun.position.set(40, 30, 15);
+    this.scene.add(this.sun);
+    this.stars = createStarfield(new Rng(0x5eed));
+    this.scene.add(this.stars);
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
   }
 
+  applyPalette(p: LevelPalette): void {
+    (this.scene.background as THREE.Color).setHex(p.sky);
+    this.hemi.color.setHex(p.hemiSky);
+    this.hemi.groundColor.setHex(p.hemiGround);
+    this.sun.color.setHex(p.sun);
+    (this.stars.material as THREE.PointsMaterial).color.setHex(p.stars);
+  }
+
   resize(): void {
     const { clientWidth: w, clientHeight: h } = this.container;
     this.renderer.setSize(w, h);
+    this.retroPass.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
 
   render(): void {
-    this.renderer.render(this.scene, this.camera);
+    if (this.retro) this.retroPass.render(this.renderer, this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
   }
 }
 
