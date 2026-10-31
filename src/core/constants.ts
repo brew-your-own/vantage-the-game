@@ -11,3 +11,12 @@ export const TOP_INSET = 0.66;
 
 /** Height of the Wisp's eye above the tile it stands on. */
 export const EYE_HEIGHT = 1.2;
+
+/** Height of one Shard; equal to a terrain level, so a Shard is worth one level of climb. */
+export const SHARD_HEIGHT = LEVEL_HEIGHT;
+
+/** Height of a Husk (it blocks line of sight up to this height). */
+export const HUSK_HEIGHT = 1.4;
+
+/** Horizontal radius of the column an object stack occupies, for occlusion and picking. */
+export const OBJECT_RADIUS = 0.42;

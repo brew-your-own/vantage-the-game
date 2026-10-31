@@ -96,7 +96,8 @@ describe('castRay', () => {
     const eye = eyeAt(t, cell);
     const hit = castRay(t, eye, { x: 0, y: -1, z: 0 });
     expect(hit).not.toBeNull();
-    expect(hit!.surface.cell).toBe(cell);
+    expect(hit!.cell).toBe(cell);
+    expect(hit!.kind).toBe('top');
     expect(hit!.point.y).toBeCloseTo(2 * LEVEL_HEIGHT, 4);
   });
 

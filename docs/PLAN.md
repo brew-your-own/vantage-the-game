@@ -36,14 +36,18 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
 | Relay         | 6      | Drained from above. Dims the Keeper as each one falls.   |
 
 ### Player actions (point at a target, press a key)
-- **Harvest** an object whose base tile you can see: you gain its energy.
-- **Place** a Shard, Husk or Seed on a flat tile you can see, or on top of a Shard stack.
+- **Harvest** the top object on a tile whose ground you can see. The tile's own objects
+  never hide it, so a tower you can't see the top of can still be taken apart. You gain
+  the object's energy.
+- **Place** a Shard, Husk or Seed on an empty tile, or on top of a Shard stack. You must see
+  the surface it will rest on, which means you can't build on a stack taller than your eye.
 - **Feed** a Spire to make it grow. Growth is gradual (≈2 s per level), so you have to
   commit to it while the beam might be coming.
-- **Transfer** into a Husk or onto a Spire top you can see. The old body stays behind as
-  a Husk you can harvest later.
-- **Scatter** (emergency jump): costs 3 energy and drops you at a random tile that is
-  *lower* than where you are.
+- **Transfer** into a Husk (or onto a Spire top) whose resting surface you can see. The old
+  body stays behind as a Husk you can harvest later, and you turn to face it.
+- **Scatter** (emergency jump): costs 3 energy, which becomes a new Husk on a random empty
+  tile *lower* than where you are, and you move into it. Energy stays conserved.
+- Shard stacks and Husks block line of sight. Moss and Seeds don't.
 - Turn and look freely (mouse look or keys). You stay rooted to one spot until you transfer.
 
 ### Threats
@@ -204,7 +208,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M0 | Scaffold *(done)*            | Vite + TS + Three.js, git, placeholder scene renders.                        |
 | M1 | Terrain *(done)*             | Seeded hex terrain generated and rendered; debug orbit camera; tests for rng/hex/terrain determinism. |
 | M2 | First-person + picking *(done)* | Wisp eye at a start tile, mouse look, crosshair picks tile/entity, LOS highlighting (green = can act, red = can't). |
-| M3 | Objects & actions            | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
+| M3 | Objects & actions *(done)*   | Moss / Shard / Husk / Seed placement, harvest, stacking, transfer, scatter; energy HUD; conservation tests. |
 | M4 | The Keeper & beam            | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world                 | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
 | M6 | Relays & win loop            | Relays dim the beam, summit win, star scoring, seed codes, level select, localStorage progress. |
