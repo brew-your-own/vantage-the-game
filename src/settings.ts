@@ -6,7 +6,6 @@ const KEY = 'vantage.settings.v1';
 export interface Settings {
   keys: KeyMap;
   muted: boolean;
-  retro: boolean;
 }
 
 export function loadSettings(): Settings {
@@ -21,7 +20,6 @@ export function loadSettings(): Settings {
   return {
     keys: parseKeyMap(raw.keys),
     muted: raw.muted === true,
-    retro: raw.retro !== false,
   };
 }
 

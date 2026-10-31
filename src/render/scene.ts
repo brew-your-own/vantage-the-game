@@ -1,16 +1,12 @@
 import * as THREE from 'three';
 import { Rng } from '../core/rng';
 import type { LevelPalette } from './palettes';
-import { RetroPass } from './retro';
 
 /** Renderer, scene, camera and lights, with resizing handled. */
 export class GameScene {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(70, 1, 0.05, 400);
-  /** Low resolution + ordered dither. On by default; G toggles it. */
-  retro = true;
-  private readonly retroPass = new RetroPass();
   private readonly hemi = new THREE.HemisphereLight(0xc8d8ff, 0x302018, 0.9);
   private readonly sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
   private readonly stars: THREE.Points;
@@ -42,14 +38,12 @@ export class GameScene {
   resize(): void {
     const { clientWidth: w, clientHeight: h } = this.container;
     this.renderer.setSize(w, h);
-    this.retroPass.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
 
   render(): void {
-    if (this.retro) this.retroPass.render(this.renderer, this.scene, this.camera);
-    else this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.camera);
   }
 }
 

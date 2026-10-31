@@ -12,7 +12,6 @@ export const ACTIONS = [
   'orbit',
   'pause',
   'mute',
-  'retro',
   'newLevel',
 ] as const;
 export type GameAction = (typeof ACTIONS)[number];
@@ -32,7 +31,6 @@ export const ACTION_LABELS: Record<GameAction, string> = {
   orbit: 'orbit view',
   pause: 'pause',
   mute: 'sound on/off',
-  retro: 'retro look on/off',
   newLevel: 'random new level',
 };
 
@@ -49,7 +47,6 @@ export const DEFAULT_KEYS: KeyMap = {
   orbit: 'o',
   pause: 'p',
   mute: 'u',
-  retro: 'g',
   newLevel: 'n',
 };
 

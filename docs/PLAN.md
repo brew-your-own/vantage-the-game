@@ -97,9 +97,9 @@ spread across the map. Drain every Relay, the lamp goes dark, and the summit is 
   With hatchRate 0.05 it loses about 3 energy to Moths, and no idle Wisp dies in that time.
 
 ### Presentation
-- Low-poly, flat-shaded geometry. The scene is drawn at 300 lines, scaled up with
-  nearest-neighbour sampling, and dithered (4×4 Bayer) down to a 6-level-per-channel
-  colour cube for an 80s look. G toggles it.
+- Low-poly, flat-shaded geometry at native resolution. A retro post-process (low resolution,
+  ordered dither, palette snapping, scanlines) was tried in M7 and dropped: it hurt more
+  than it added.
 - Each level code picks one of 8 palettes (meadow, dune, tundra, ember, lichen, violet,
   reef, slate) for land, sky, stars and light.
 - Sound effects are synthesized at runtime with WebAudio: a beam hum that swells as the beam
@@ -189,7 +189,7 @@ src/
     sim.ts              # fixed-step tick (20 Hz): beam rotation, drain, moss growth, moths, spires
     state.ts            # GameState type + serialization (save, replay, tests)
   render/
-    scene.ts            # renderer, camera, low-res render target, dither pass
+    scene.ts            # renderer, camera, lights, starfield, level palette
     terrainMesh.ts      # one merged BufferGeometry for the terrain, per-level palette
     entityMeshes.ts     # instanced meshes per entity type
     beam.ts             # visible light cone + lit-tile overlay
@@ -250,7 +250,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M4 | The Keeper & beam *(done)*   | Rotating cone, real shadows, continuous drain, lose condition, beam audio/visual warning. |
 | M5 | Living world *(done)*        | Moss growth/spread, Spire growth by feeding, lit moss → Moths, Moth AI.      |
 | M6 | Relays & win loop *(done)*   | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
-| M7 | Look & SFX *(done)*          | Low-res + dither post-process, per-level palettes, procedural sound effects, title/pause menus, key remapping. |
+| M7 | Look & SFX *(done)*          | Per-level palettes (retro post-process tried and dropped), procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music               | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
 | M9 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
 | M10| Polish (stretch)             | Tutorial level, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |
@@ -291,8 +291,7 @@ game dependencies, so they can be started earlier, alongside M4–M6, if useful.
   with a difficulty curve, with free level-code entry as a bonus? *(Proposed: curated list plus
   free entry.)*
 - Keyboard and mouse only, or touch controls too?
-- How strict should the retro look be (very low resolution and harsh dither) versus a
-  cleaner modern low-poly style? We could offer both as a setting.
+- How strict should the retro look be? *(Decided in M7: no retro post-process; clean low-poly.)*
 - Musical direction: dark ambient and minimalist (drones, sparse motifs), or a more
   melodic 80s synth sound (arpeggios up front)? *(Proposed: dark ambient by default,
   with arpeggios coming in as you make progress.)*

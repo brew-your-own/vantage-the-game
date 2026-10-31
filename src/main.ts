@@ -34,7 +34,7 @@ import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/o
 import { GameScene } from './render/scene';
 import { buildTerrainGeometry } from './render/terrainMesh';
 
-// M7: retro look (low-res + dither), per-level palettes, sound effects, pause, key remapping.
+// M7: per-level palettes, sound effects, pause, key remapping.
 // URL: ?level=<level code> (the old ?seed= is still accepted).
 // Internally a level code is the generator seed; players only ever see "level code",
 // so it is never confused with the Seed object they can plant.
@@ -53,7 +53,6 @@ const pauseEl = document.getElementById('pause')!;
 const view = new GameScene(container);
 const canvas = view.renderer.domElement;
 const settings = loadSettings();
-view.retro = settings.retro;
 const sfx = new Sfx();
 sfx.muted = settings.muted;
 /** The action waiting for a new key in the controls menu, if any. */
@@ -468,7 +467,6 @@ function openMenu(): void {
     });
   });
   menuEl.querySelector('#toggle-sound')!.addEventListener('click', () => toggleMute());
-  menuEl.querySelector('#toggle-retro')!.addEventListener('click', () => toggleRetro());
   menuEl.querySelector('#reset-keys')!.addEventListener('click', () => {
     settings.keys = { ...DEFAULT_KEYS };
     saveSettings(settings);
@@ -498,7 +496,6 @@ function controlsHtml(): string {
   return (
     `<details ${controlsOpen ? 'open' : ''}><summary>controls &amp; settings</summary>` +
     `<p><button id="toggle-sound">sound: ${sfx.muted ? 'off' : 'on'}</button> ` +
-    `<button id="toggle-retro">retro look: ${view.retro ? 'on' : 'off'}</button> ` +
     '<button id="reset-keys">reset keys</button></p>' +
     `<table class="controls">${rows}</table>` +
     '<p class="keys">click a key, then press the new one · M, Esc and Enter are fixed · mouse: look, click harvests</p>' +
@@ -512,14 +509,6 @@ function toggleMute(): void {
   saveSettings(settings);
   if (menuOpen) openMenu();
   else flash(`sound ${sfx.muted ? 'off' : 'on'}`);
-}
-
-function toggleRetro(): void {
-  view.retro = !view.retro;
-  settings.retro = view.retro;
-  saveSettings(settings);
-  if (menuOpen) openMenu();
-  else flash(`retro look ${view.retro ? 'on' : 'off'}`);
 }
 
 function setPaused(next: boolean): void {
@@ -550,7 +539,6 @@ window.addEventListener('keydown', (e) => {
   if (key === 'm') return openMenu();
   const action = actionFor(settings.keys, e.key);
   if (action === 'mute') return toggleMute();
-  if (action === 'retro') return toggleRetro();
   if (world.status === 'won') {
     if (key === 'enter') loadLevel(nextCode());
     else if (key === 'r') loadLevel(seed);
