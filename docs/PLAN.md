@@ -261,7 +261,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M6 | Relays & win loop *(done)*   | Relays dim the beam, summit win, star scoring, level codes, level select, localStorage progress. |
 | M7 | Look & SFX *(done)*          | Per-level palettes (retro post-process tried and dropped), procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music *(done)*      | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
-| M9 | Ship                         | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
+| M9 | Ship *(done)*                | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
 | M10| Polish (stretch)             | Tutorial level, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |
 
 Music comes after M6 because it needs the full set of game signals (beam, Moths, Relays,
@@ -292,6 +292,11 @@ game dependencies, so they can be started earlier, alongside M4–M6, if useful.
 2. Add `.github/workflows/deploy.yml`: on push to `main`, run `npm ci && npm test && npm run build`,
    then `actions/upload-pages-artifact` (from `dist/`) → `actions/deploy-pages`.
 3. The relative `base` means no repo-name hard-coding is needed.
+
+**As built (M9).** `.github/workflows/deploy.yml` (Node 24, `npm ci`, tests, build, then
+`configure-pages` → `upload-pages-artifact` → `deploy-pages`; also runnable by hand via
+`workflow_dispatch`). Live at https://brew-your-own.github.io/vantage-the-game/. The README
+has the play link, a short how-to-play and the default controls.
 
 ---
 
