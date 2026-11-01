@@ -4,7 +4,18 @@ import { type ActionResult, type Intent, SCATTER_COST, applyIntent, occludersOf 
 import { cellTop } from './core/surface';
 import { DEFAULT_TERRAIN, generateTerrain } from './core/terrain';
 import { beamEta, keeperSightTiles, lampVisibleTiles, playerLit } from './core/keeper';
-import { CAMPAIGN, ENERGY_STAR, type LevelSpec, campaignIndex, specFor, starsFor } from './core/levels';
+import {
+  CAMPAIGN,
+  ENERGY_STAR,
+  type LevelSpec,
+  TUTORIAL,
+  TUTORIAL_OPTIONS,
+  campaignIndex,
+  specFor,
+  starsFor,
+} from './core/levels';
+import { isFairCode, randomFairCode } from './core/fair';
+import { STEPS, type TutorialSignal, advance, hatchTutorialMoth } from './tutorial';
 import { type LossCause, step } from './core/sim';
 import { castRay, visibleCells } from './core/visibility';
 import { RELAY_ENERGY, SPIRE_FEED_COST } from './core/constants';
@@ -20,7 +31,7 @@ import {
   relayAt,
   topOf,
 } from './core/world';
-import { bestStars, recordStars, totalStars, unlocked } from './progress';
+import { bestStars, markTutorialDone, recordStars, totalStars, tutorialDone, unlocked } from './progress';
 import { LookControls } from './input/controls';
 import { EntityView } from './render/entityMeshes';
 import { MothView } from './render/mothView';
@@ -56,6 +67,7 @@ const relaysEl = document.getElementById('relays')!;
 const menuEl = document.getElementById('menu')!;
 const pauseEl = document.getElementById('pause')!;
 const tauntEl = document.getElementById('taunt')!;
+const tutorialEl = document.getElementById('tutorial')!;
 const view = new GameScene(container);
 const canvas = view.renderer.domElement;
 const settings = loadSettings();
@@ -127,6 +139,12 @@ let simClock = 0;
 
 let seed = 0;
 let spec: LevelSpec;
+/** Playing the tutorial: a guided level with its own options and step panel. */
+let tutorial = false;
+let tutorialStep = 0;
+/** Radians turned so far (the tutorial's first step is looking around). */
+let lookTravel = 0;
+let lastYaw = 0;
 let menuOpen = false;
 let world: World;
 let terrainMesh: THREE.Mesh | null = null;
@@ -136,11 +154,15 @@ let target: { cell: number; canAct: boolean } | null = null;
 let mode: 'first-person' | 'orbit' = 'first-person';
 let messageTimer = 0;
 
-function loadLevel(code: number): void {
+/** A random level code that passes the fairness checks (the Keeper can't see everything). */
+const randomCode = () => randomFairCode({ relays: specFor(0).relays }, Math.random);
+
+function loadLevel(code: number, asTutorial = false): void {
   seed = code;
-  spec = specFor(code);
+  tutorial = asTutorial;
+  spec = asTutorial ? TUTORIAL : specFor(code);
   const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
-  world = createWorld(terrain, seed, { relays: spec.relays });
+  world = createWorld(terrain, seed, asTutorial ? TUTORIAL_OPTIONS : { relays: spec.relays });
   const palette = paletteFor(code);
   view.applyPalette(palette);
   setPaused(false);
@@ -152,6 +174,8 @@ function loadLevel(code: number): void {
   view.scene.add(terrainMesh);
   keeperView.build(world, view.scene);
   simClock = 0;
+  // Every level starts in the Wisp's eyes, even if the last one ended in orbit view.
+  if (mode !== 'first-person') setMode('first-person');
   endEl.style.display = 'none';
   closeMenu();
   mood = NEUTRAL_MOOD;
@@ -162,11 +186,80 @@ function loadLevel(code: number): void {
   hideTaunt();
   refresh();
   taunt('start');
+  // The tutorial starts facing the nearest moss in reach, so the first steps are in view.
+  if (asTutorial) faceNearestMoss();
+  tutorialStep = 0;
+  lookTravel = 0;
+  lastYaw = look.yaw;
+  renderTutorial();
+  // Typed or linked codes may be harsh; random ones never are.
+  if (!asTutorial && campaignIndex(code) < 0 && !isFairCode(code, { relays: spec.relays })) {
+    flash('a harsh level: the Keeper sees most of this land', true);
+    messageTimer = 4;
+  }
 
   const url = new URL(window.location.href);
   url.searchParams.delete('seed');
-  url.searchParams.set('level', String(seed));
+  if (asTutorial) {
+    url.searchParams.delete('level');
+    url.searchParams.set('tutorial', '');
+  } else {
+    url.searchParams.delete('tutorial');
+    url.searchParams.set('level', String(seed));
+  }
   window.history.replaceState(null, '', url);
+}
+
+function faceNearestMoss(): void {
+  const { grid } = world.terrain;
+  const here = grid.cells[world.player.cell];
+  let best = -1;
+  let bestD = Infinity;
+  world.stacks.forEach((stack, i) => {
+    if (visible[i] !== 1 || stack.length !== 1 || stack[0].kind !== 'moss') return;
+    const c = grid.cells[i];
+    const d = (Math.abs(c.q - here.q) + Math.abs(c.r - here.r) + Math.abs(c.q + c.r - here.q - here.r)) / 2;
+    // Not right next to us: up close a tile shows mostly its side.
+    if (d >= 2 && d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  if (best < 0) return;
+  faceToward(best);
+  const eye = playerEye(world);
+  const t = cellTop(world.terrain, best);
+  look.pitch = Math.atan2(t.y - eye.y, Math.hypot(t.x - eye.x, t.z - eye.z));
+}
+
+/** Moves the tutorial on after a signal (or a world change), and redraws its panel. */
+function tutorialSignal(signal?: TutorialSignal): void {
+  if (!tutorial) return;
+  const next = advance(tutorialStep, world, signal);
+  if (next === tutorialStep) return;
+  tutorialStep = next;
+  if (next < STEPS.length) sfx.play('click');
+  ensureTutorialMoth(true);
+  renderTutorial();
+}
+
+/**
+ * On the Moth step, a Moth hatches in view as the step starts (others may be out of
+ * sight), and again whenever none is left to swat.
+ */
+function ensureTutorialMoth(entering = false): void {
+  if (!tutorial || !STEPS[tutorialStep]?.needsMoth) return;
+  if (!entering && world.moths.length > 0) return;
+  if (hatchTutorialMoth(world) >= 0) refresh(false);
+}
+
+function renderTutorial(): void {
+  const show = tutorial && !menuOpen && world.status === 'playing' && tutorialStep < STEPS.length;
+  tutorialEl.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  const step = STEPS[tutorialStep];
+  tutorialEl.innerHTML =
+    `<span class="step">tutorial ${tutorialStep + 1}/${STEPS.length}</span><b>${step.title}</b><br>` + step.text(K);
 }
 
 /**
@@ -245,6 +338,7 @@ function act(intent: Intent): ActionResult {
       flash(ev.remaining > 0 ? `+${ev.energy} relay drained · ${ev.remaining} left` : 'the Keeper goes dark · take the summit');
     }
     if (ev.type === 'won') showWin();
+    tutorialSignal(ev);
   }
   if (intent.type === 'transfer') faceToward(from);
   // Moving to another body snaps the camera; only lifts in place are eased.
@@ -413,6 +507,7 @@ function simulate(dt: number): void {
 }
 
 function levelLabel(): string {
+  if (tutorial) return 'tutorial';
   const i = campaignIndex(seed);
   return i >= 0 ? `level ${i + 1}/${CAMPAIGN.length} · code ${seed}` : `level code ${seed}`;
 }
@@ -482,6 +577,7 @@ function updateBeamUi(): void {
 
 function showEnd(cause: LossCause): void {
   document.exitPointerLock();
+  renderTutorial();
   const why = cause === 'beam' ? 'The Keeper drained your last energy.' : 'A moth fed on your last energy.';
   endEl.innerHTML =
     `<h1>YOUR LIGHT WENT OUT</h1><p>${why}</p>` +
@@ -491,11 +587,12 @@ function showEnd(cause: LossCause): void {
 
 function nextCode(): number {
   const i = campaignIndex(seed);
-  return i >= 0 && i + 1 < CAMPAIGN.length ? CAMPAIGN[i + 1].code : Math.floor(Math.random() * 1_000_000);
+  return i >= 0 && i + 1 < CAMPAIGN.length ? CAMPAIGN[i + 1].code : randomCode();
 }
 
 function showWin(): void {
   document.exitPointerLock();
+  if (tutorial) return showTutorialDone();
   const stars = starsFor(world, spec);
   const best = recordStars(seed, stars);
   const star = (on: boolean) => `<span class="${on ? 'on' : 'off'}">★</span>`;
@@ -508,6 +605,17 @@ function showWin(): void {
     ` · ${star(world.time <= spec.par)} within par (${clockText(world.time)} / ${clockText(spec.par)})</p>` +
     (best ? '<p>new best!</p>' : '') +
     `<p>[Enter] ${next} · [R] replay · [M] menu</p>`;
+  endEl.style.display = 'flex';
+}
+
+function showTutorialDone(): void {
+  markTutorialDone();
+  renderTutorial();
+  endEl.innerHTML =
+    '<h1 class="won">TUTORIAL COMPLETE</h1>' +
+    '<p>That is the whole game. Real levels have more Relays, a faster beam and hungrier moths:<br>' +
+    'hide from the beam, climb high, and spend your energy wisely.</p>' +
+    '<p>[Enter] level 1 · [R] replay the tutorial · [M] menu</p>';
   endEl.style.display = 'flex';
 }
 
@@ -525,6 +633,9 @@ function openMenu(): void {
   menuEl.innerHTML =
     '<h1>VANTAGE</h1>' +
     '<p class="lead">Drain the Keeper’s Relays from above. When its lamp goes dark, take its summit.</p>' +
+    (tutorialDone()
+      ? '<p><button id="start-tutorial">replay the tutorial</button></p>'
+      : '<p><button id="start-tutorial" class="primary">▶ new here? play the tutorial</button></p>') +
     `<div class="levels">${tiles}</div>` +
     `<p>${totalStars()} / ${CAMPAIGN.length * 3} stars · each level: win, keep ${ENERGY_STAR}+ energy, beat par</p>` +
     '<form id="code-form"><label>level code <input id="code-input" inputmode="numeric" autocomplete="off" size="8"></label>' +
@@ -532,6 +643,7 @@ function openMenu(): void {
     controlsHtml() +
     '<p class="keys">[M] or [Esc] back to the game</p>';
   menuEl.style.display = 'flex';
+  renderTutorial();
   const details = menuEl.querySelector('details')!;
   details.addEventListener('toggle', () => (controlsOpen = details.open));
   menuEl.querySelectorAll<HTMLButtonElement>('button[data-action]').forEach((b) => {
@@ -556,13 +668,15 @@ function openMenu(): void {
     const code = Number((menuEl.querySelector('#code-input') as HTMLInputElement).value.trim());
     if (Number.isInteger(code) && code > 0) loadLevel(code);
   });
-  menuEl.querySelector('#random-level')!.addEventListener('click', () => loadLevel(Math.floor(Math.random() * 1_000_000)));
+  menuEl.querySelector('#random-level')!.addEventListener('click', () => loadLevel(randomCode()));
+  menuEl.querySelector('#start-tutorial')!.addEventListener('click', () => loadLevel(TUTORIAL.code, true));
 }
 
 function closeMenu(): void {
   menuOpen = false;
   rebinding = null;
   menuEl.style.display = 'none';
+  if (world) renderTutorial();
 }
 
 function controlsHtml(): string {
@@ -668,12 +782,12 @@ window.addEventListener('keydown', (e) => {
   if (action === 'mute') return toggleMute();
   if (action === 'music') return toggleMusic();
   if (world.status === 'won') {
-    if (key === 'enter') loadLevel(nextCode());
-    else if (key === 'r') loadLevel(seed);
+    if (key === 'enter') loadLevel(tutorial ? CAMPAIGN[0].code : nextCode());
+    else if (key === 'r') loadLevel(seed, tutorial);
     return;
   }
   if (world.status === 'lost') {
-    if (key === 'enter') loadLevel(seed);
+    if (key === 'enter') loadLevel(seed, tutorial);
     return;
   }
   if (paused) {
@@ -681,10 +795,11 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (action === 'pause') return setPaused(true);
-  if (action === 'newLevel') return loadLevel(Math.floor(Math.random() * 1_000_000));
+  if (action === 'newLevel') return loadLevel(randomCode());
   if (action === 'yourView') return void (overlay.mesh.visible = !overlay.mesh.visible);
   if (action === 'keeperSight') {
     keeperOverlay.mesh.visible = !keeperOverlay.mesh.visible;
+    tutorialSignal({ type: 'keeperSight' });
     return updateKeeperOverlay();
   }
   if (action === 'orbit') return setMode(mode === 'orbit' ? 'first-person' : 'orbit');
@@ -713,7 +828,9 @@ canvas.addEventListener('mousedown', (e) => {
 
 const query = new URLSearchParams(window.location.search);
 const param = Number(query.get('level') ?? query.get('seed'));
-if (Number.isInteger(param) && param > 0) {
+if (query.has('tutorial')) {
+  loadLevel(TUTORIAL.code, true);
+} else if (Number.isInteger(param) && param > 0) {
   loadLevel(param);
 } else {
   // No level asked for: show the menu over the first level not yet won.
@@ -739,6 +856,12 @@ view.renderer.setAnimationLoop(() => {
     orbit.update();
   }
   if (!menuOpen && !paused) simulate(dt);
+  if (tutorial) ensureTutorialMoth();
+  if (tutorial && tutorialStep === 0) {
+    lookTravel += Math.abs(look.yaw - lastYaw);
+    lastYaw = look.yaw;
+    if (lookTravel > 1.5) tutorialSignal({ type: 'looked' });
+  }
   keeperView.update(world, clock.elapsedTime);
   entities.animate();
   mothView.update(world, clock.elapsedTime);
@@ -772,6 +895,7 @@ if (import.meta.env.DEV) {
     music,
     voice,
     taunt,
+    tutorial: () => ({ active: tutorial, step: tutorialStep }),
     mood: () => mood,
     settings,
     refresh,

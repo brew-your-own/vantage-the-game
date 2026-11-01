@@ -5,14 +5,13 @@
  *   npm run curate
  */
 import { writeFileSync } from 'node:fs';
-import { keeperSightTiles, playerInLampSight } from '../src/core/keeper';
+import { hiddenTiles, isFairWorld } from '../src/core/fair';
 import { relaysForIndex } from '../src/core/levels';
 import { DEFAULT_TERRAIN, generateTerrain } from '../src/core/terrain';
 import { createWorld } from '../src/core/world';
 
 const SCAN = 400;
 const COUNT = 20;
-const MIN_HIDDEN = 20;
 
 interface Candidate {
   code: number;
@@ -23,13 +22,7 @@ const candidates: Candidate[] = [];
 for (let code = 1; code <= SCAN; code++) {
   const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed: code });
   const world = createWorld(terrain, code, { relays: 5 });
-  if (world.relays.length < 5 || playerInLampSight(world)) continue;
-  const sight = keeperSightTiles(world);
-  let hidden = 0;
-  sight.forEach((v, i) => {
-    if (!v && i !== world.keeper.cell && !world.relays.some((r) => r.cell === i)) hidden++;
-  });
-  if (hidden >= MIN_HIDDEN) candidates.push({ code, hidden });
+  if (isFairWorld(world, 5)) candidates.push({ code, hidden: hiddenTiles(world) });
 }
 if (candidates.length < COUNT) throw new Error(`only ${candidates.length} candidates`);
 

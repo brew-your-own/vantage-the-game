@@ -11,6 +11,8 @@ Inspired by Geoff Crammond's [*The Sentinel*](https://en.wikipedia.org/wiki/The_
 
 ## How to play
 
+New? Open the menu (M) and play the **tutorial**: fourteen short steps, on a gentler level.
+
 You are a Wisp on a hex landscape watched by the Keeper, whose lamp sweeps a beam across
 the land. Standing in the beam drains your energy. Harvest energy from the land, build
 Shards to gain height, and transfer into Husks to move. Drain every Relay to put the
@@ -28,7 +30,7 @@ Keeper's lamp out, then transfer onto the Keeper's plinth to win.
 | O | orbit view |
 | P | pause |
 | U / J | all sound / music on or off |
-| N | random new level |
+| N | random new level (always a fair one) |
 | M | menu: levels, level code, settings, key remapping |
 
 All game keys can be remapped in the menu. Progress and settings are saved in the browser.
@@ -46,6 +48,7 @@ npm test         # unit tests
 npm run build    # static build in dist/ (GitHub Pages-ready)
 npm run curate   # re-pick the campaign levels (writes src/core/campaignData.ts)
 npm run balance  # Moth pressure on an idle Wisp, per campaign level
+npm run pick-tutorial  # list level codes whose tutorial route works
 ```
 
 In dev builds, the backquote key opens a panel for auditioning the adaptive music.

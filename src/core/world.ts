@@ -110,6 +110,10 @@ export interface Relay {
 export interface WorldOptions {
   /** Number of Relays to place. */
   relays: number;
+  /** Beam turning speed multiplier (the tutorial uses a slower beam). Default 1. */
+  beamScale?: number;
+  /** Energy the Wisp starts with. Default START_ENERGY. */
+  startEnergy?: number;
 }
 
 export const DEFAULT_OPTIONS: WorldOptions = { relays: 4 };
@@ -133,6 +137,8 @@ export interface World {
   /** RNG state for gameplay randomness (Scatter, drain moss, later moths). */
   rngState: number;
   nextId: number;
+  /** Beam speed multiplier from WorldOptions; absent means 1. */
+  beamScale?: number;
 }
 
 export const START_ENERGY = 10;
@@ -154,7 +160,7 @@ export function createWorld(terrain: Terrain, seed: number, options: WorldOption
   const world: World = {
     terrain,
     stacks,
-    player: { cell: startCell, energy: START_ENERGY },
+    player: { cell: startCell, energy: options.startEnergy ?? START_ENERGY },
     keeper: { cell: keeperCell, yaw },
     moths: [],
     relays: pickRelayCells(terrain, seed, keeperCell, startCell, options.relays).map((cell) => ({
@@ -166,6 +172,7 @@ export function createWorld(terrain: Terrain, seed: number, options: WorldOption
     drainClock: 0,
     rngState: (seed ^ 0x9e3779b9) >>> 0,
     nextId: 1,
+    beamScale: options.beamScale ?? 1,
   };
   spawn(world, world.player.cell, 'husk');
 
@@ -195,7 +202,10 @@ export function beamParams(world: World): { halfAngle: number; speed: number } {
   const total = world.relays.length;
   const left = world.relays.filter((r) => !r.drained).length;
   const f = total === 0 ? 1 : left / total;
-  return { halfAngle: BEAM.halfAngle * (0.4 + 0.6 * f), speed: BEAM.speed * (0.5 + 0.5 * f) };
+  return {
+    halfAngle: BEAM.halfAngle * (0.4 + 0.6 * f),
+    speed: BEAM.speed * (0.5 + 0.5 * f) * (world.beamScale ?? 1),
+  };
 }
 
 export function spawn(world: World, cell: number, kind: EntityKind): Entity {

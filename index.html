@@ -47,6 +47,10 @@
       #menu .levels button.current { border-color: #7fa0c8; }
       #menu input { font-family: monospace; background: #0b0e1f; color: #e8ecff; border: 1px solid #3a4270; border-radius: 4px; padding: 5px; }
       #menu .keys { color: #7f88b0; font-size: 12px; }
+      #menu button.primary { background: #3a3010; border-color: #ffd36a; color: #ffe9a8; font-size: 15px; padding: 8px 16px; }
+      #tutorial { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); box-sizing: border-box; display: none; padding: 10px 14px; background: rgba(10, 13, 30, 0.82); border: 1px solid #ffd36a; border-radius: 6px; color: #e8ecff; font-size: 14px; line-height: 1.4; pointer-events: none; }
+      #tutorial b { color: #ffd36a; }
+      #tutorial .step { color: #7f88b0; font-size: 12px; float: right; }
       @media (max-width: 500px) { #menu .levels { grid-template-columns: repeat(4, 64px); } }
       #pause { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
                background: rgba(5,6,15,0.6); color: #e8ecff; pointer-events: none; }
@@ -66,6 +70,7 @@
     <div id="energy"></div>
     <div id="message"></div>
     <div id="taunt"></div>
+    <div id="tutorial"></div>
     <div id="beam"></div>
     <div id="lit"></div>
     <div id="relays"></div>

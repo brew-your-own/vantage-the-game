@@ -262,13 +262,26 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M7 | Look & SFX *(done)*          | Per-level palettes (retro post-process tried and dropped), procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music *(done)*      | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
 | M9 | Ship *(done)*                | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
-| M10| Polish (stretch)             | Tutorial level, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |
+| M10| Polish (stretch)             | Tutorial level *(done)*, fair random codes *(done)*, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |
 
 Music comes after M6 because it needs the full set of game signals (beam, Moths, Relays,
 win/lose) to react to. `music/theory.ts` and `music/composer.ts` are pure code with no
 game dependencies, so they can be started earlier, alongside M4–M6, if useful.
 
 ---
+
+**As built (M10, part 1).** *Tutorial*: `src/tutorial.ts` holds fourteen steps (look, harvest,
+Shard, stack, Husk, transfer, take back the old body, Keeper's sight, swat a Moth, plant a Seed,
+grow a Spire, climb it, drain the Relay, take the summit), each completed by a game event, and skipped when the world already shows it done. It
+plays level code 493 with one Relay, a half-speed beam and 15 energy (`TUTORIAL_OPTIONS`). The
+code was picked by `npm run pick-tutorial`: `scripts/tutorialRoute.ts` plans the route the
+tutorial teaches against the real rules (a near, clearly aimable two-Shard tower first, a
+Moth the tutorial hatches from moss in view, a fully fed Spire, then climbing again as needed), and a test replays that route through the steps to the win. The
+Wisp starts facing a moss two or more tiles away; the menu offers the tutorial until it is
+finished. *Fair codes*: `src/core/fair.ts` (shared with `npm run curate`) requires a hidden
+start, all Relays placed and at least 20 hiding tiles; random levels (N, menu) re-roll until
+fair (about 1 in 5 codes is, ~45 ms per check); typed or linked harsh codes still load, with a
+warning.
 
 ## 5. Testing strategy
 - **Unit tests (Vitest)** for everything in `src/core`: PRNG determinism, hex math, terrain

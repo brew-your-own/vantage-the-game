@@ -1,5 +1,5 @@
 import { CAMPAIGN_CODES } from './campaignData';
-import type { World } from './world';
+import type { World, WorldOptions } from './world';
 
 /** What makes a level: its code (terrain seed), how many Relays, and the par time. */
 export interface LevelSpec {
@@ -38,3 +38,10 @@ export function starsFor(world: World, spec: LevelSpec): number {
   if (world.status !== 'won') return 0;
   return 1 + (world.player.energy >= ENERGY_STAR ? 1 : 0) + (world.time <= spec.par ? 1 : 0);
 }
+
+/**
+ * The tutorial: one Relay, a half-speed beam and extra energy, on a level whose route is
+ * checked by tests (scripts/tutorialRoute.ts). Picked with scripts/pickTutorial.ts.
+ */
+export const TUTORIAL_OPTIONS: WorldOptions = { relays: 1, beamScale: 0.5, startEnergy: 15 };
+export const TUTORIAL: LevelSpec = { code: 493, relays: 1, par: 600 };

@@ -41,3 +41,22 @@ export function unlocked(index: number): boolean {
 export function totalStars(): number {
   return CAMPAIGN.reduce((sum, s) => sum + bestStars(s.code), 0);
 }
+
+const TUTORIAL_KEY = 'vantage.tutorial.v1';
+
+/** Has the tutorial been finished in this browser? */
+export function tutorialDone(): boolean {
+  try {
+    return window.localStorage.getItem(TUTORIAL_KEY) === 'done';
+  } catch {
+    return false;
+  }
+}
+
+export function markTutorialDone(): void {
+  try {
+    window.localStorage.setItem(TUTORIAL_KEY, 'done');
+  } catch {
+    // Remembered for this visit only.
+  }
+}

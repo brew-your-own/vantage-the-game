@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "curate": "tsx scripts/curate.ts",
-    "balance": "tsx scripts/balance.ts"
+    "balance": "tsx scripts/balance.ts",
+    "pick-tutorial": "tsx scripts/pickTutorial.ts"
   },
   "dependencies": {
     "three": "^0.187.0"
