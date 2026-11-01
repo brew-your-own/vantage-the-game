@@ -2,15 +2,15 @@ import * as THREE from 'three';
 import { HUSK_HEIGHT, SHARD_HEIGHT, SPIRE_GROW_TIME, SPIRE_STEP } from '../core/constants';
 import { hash2 } from '../core/rng';
 import { cellTop } from '../core/surface';
+import { wobble } from './access';
 import { ENERGY, type Entity, type EntityKind, type World, entityHeight, isSupport } from '../core/world';
 
 const mat = (color: number, emissive = 0x000000) =>
   new THREE.MeshLambertMaterial({ color, emissive, flatShading: true });
 
-const MATERIALS: Record<EntityKind, THREE.Material> = {
+const MATERIALS: Record<Exclude<EntityKind, 'moss'>, THREE.Material> = {
   shard: mat(0x6fd3e8, 0x0b2a33),
   husk: mat(0xb9a6e0, 0x1a1030),
-  moss: mat(0xc8f060, 0x2a3a08),
   seed: mat(0xffa040, 0x3a1800),
 };
 const SPIRE_MATERIAL = mat(0xd98a3a, 0x2a1000);
@@ -34,18 +34,55 @@ function huskGroup(): THREE.Group {
   return g;
 }
 
-function mossGroup(id: number): THREE.Group {
-  // A few low, glowing lumps, laid out pseudo-randomly from the entity id.
+/** A soft round glow (white; tinted by the material colour), for moss halos and pools. */
+const GLOW_TEXTURE = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const glowMaterial = { map: GLOW_TEXTURE, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
+const MOTE_GEOMETRY = new THREE.OctahedronGeometry(1);
+const MOTE_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xe8ff9a });
+const MOTE_HALO = new THREE.SpriteMaterial({ ...glowMaterial, color: 0xd0ff70, opacity: 0.55 });
+const POOL_GEOMETRY = (() => {
+  const g = new THREE.PlaneGeometry(0.9, 0.9);
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, 0.01, 0);
+  return g;
+})();
+const POOL_MATERIAL = new THREE.MeshBasicMaterial({ ...glowMaterial, color: 0xb8ff60, opacity: 0.35 });
+
+/** A hovering mote of moss: bobs gently (see EntityView.animate). */
+interface Mote {
+  obj: THREE.Object3D;
+  base: number;
+  phase: number;
+}
+
+/** Moss: three specks of light hovering over a faint pool of glow, placed from the entity id. */
+function mossGroup(id: number, motes: Mote[]): THREE.Group {
   const g = new THREE.Group();
-  const n = 3 + Math.floor(hash2(id, 0, 7) * 3);
-  for (let i = 0; i < n; i++) {
-    const r = 0.1 + hash2(id, i, 11) * 0.09;
-    const lump = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), MATERIALS.moss);
+  g.add(new THREE.Mesh(POOL_GEOMETRY, POOL_MATERIAL));
+  for (let i = 0; i < 3; i++) {
+    const mote = new THREE.Mesh(MOTE_GEOMETRY, MOTE_MATERIAL);
+    mote.scale.setScalar(0.045 + hash2(id, i, 11) * 0.02);
+    const halo = new THREE.Sprite(MOTE_HALO);
+    halo.scale.setScalar(0.32);
+    const o = new THREE.Group();
+    o.add(mote, halo);
     const a = hash2(id, i, 13) * Math.PI * 2;
-    const d = hash2(id, i, 17) * 0.28;
-    lump.position.set(Math.cos(a) * d, r * 0.5, Math.sin(a) * d);
-    lump.scale.y = 0.6;
-    g.add(lump);
+    const d = 0.08 + hash2(id, i, 17) * 0.2;
+    const base = 0.25 + hash2(id, i, 19) * 0.3;
+    o.position.set(Math.cos(a) * d, base, Math.sin(a) * d);
+    motes.push({ obj: o, base, phase: hash2(id, i, 23) * Math.PI * 2 });
+    g.add(o);
   }
   return g;
 }
@@ -82,7 +119,7 @@ export function spireVisualHeight(e: Entity): number {
 
 const SHARD_GEOMETRY = shardGeometry();
 
-function objectFor(e: Entity): THREE.Object3D {
+function objectFor(e: Entity, motes: Mote[]): THREE.Object3D {
   switch (e.kind) {
     case 'shard':
       return new THREE.Mesh(SHARD_GEOMETRY, MATERIALS.shard);
@@ -95,7 +132,7 @@ function objectFor(e: Entity): THREE.Object3D {
       return g;
     }
     case 'moss':
-      return mossGroup(e.id);
+      return mossGroup(e.id, motes);
     case 'seed':
       return seedMesh(); // replaced by a Spire in EntityView once fed
   }
@@ -107,12 +144,14 @@ export class EntityView {
   /** Object for the player's current body, hidden in first person. */
   playerBody: THREE.Object3D | null = null;
   private spires: { entity: Entity; column: THREE.Mesh; bulb: THREE.Mesh }[] = [];
+  private motes: Mote[] = [];
 
   rebuild(world: World): void {
     for (const child of this.group.children) disposeNonShared(child);
     this.group.clear();
     this.playerBody = null;
     this.spires = [];
+    this.motes = [];
     world.stacks.forEach((stack, cell) => {
       const base = cellTop(world.terrain, cell);
       let y = base.y;
@@ -123,7 +162,7 @@ export class EntityView {
           this.spires.push({ entity: e, column: spire.column, bulb: spire.bulb });
           obj = spire.group;
         } else {
-          obj = objectFor(e);
+          obj = objectFor(e, this.motes);
         }
         obj.position.set(base.x, y, base.z);
         if (isSupport(e)) y += entityHeight(e);
@@ -132,11 +171,15 @@ export class EntityView {
         if (cell === world.player.cell && i === stack.length - 1 && e.kind === 'husk') this.playerBody = obj;
       });
     });
-    this.animate();
+    this.animate(0);
   }
 
-  /** Per-frame updates: Spires grow smoothly between simulation steps. */
-  animate(): void {
+  /** Per-frame updates: Spires grow smoothly between simulation steps; moss motes bob. */
+  animate(time: number): void {
+    for (const m of this.motes) {
+      m.obj.position.y = m.base + wobble(0.06 * Math.sin(time * 1.6 + m.phase));
+      m.obj.rotation.y = wobble(time * 1.5 + m.phase);
+    }
     for (const { entity, column, bulb } of this.spires) {
       const h = Math.max(0.05, spireVisualHeight(entity));
       column.scale.y = h;
@@ -147,6 +190,7 @@ export class EntityView {
 
 function disposeNonShared(obj: THREE.Object3D): void {
   obj.traverse((o) => {
-    if (o instanceof THREE.Mesh && o.geometry !== SHARD_GEOMETRY && o.geometry !== SPIRE_GEOMETRY) o.geometry.dispose();
+    const shared = [SHARD_GEOMETRY, SPIRE_GEOMETRY, MOTE_GEOMETRY, POOL_GEOMETRY];
+    if (o instanceof THREE.Mesh && !shared.includes(o.geometry)) o.geometry.dispose();
   });
 }

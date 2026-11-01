@@ -979,7 +979,7 @@ view.renderer.setAnimationLoop(() => {
     if (lookTravel > 1.5) tutorialSignal({ type: 'looked' });
   }
   keeperView.update(world, clock.elapsedTime);
-  entities.animate();
+  entities.animate(clock.elapsedTime);
   mothView.update(world, clock.elapsedTime);
   relayView.animate(clock.elapsedTime);
   if (!title) updateBeamUi();

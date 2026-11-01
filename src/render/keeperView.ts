@@ -4,6 +4,7 @@ import { tileLit } from '../core/keeper';
 import { cellTop } from '../core/surface';
 import { type World, beamParams, keeperDark } from '../core/world';
 import { wobble } from './access';
+import { MOSAIC_GOLD, MOSAIC_HOOD, mosaicPrism, trim } from './mosaic';
 
 const BEAM_LENGTH = 34;
 const LIT_COLOR = new THREE.Color(0.42, 0.32, 0.09);
@@ -21,17 +22,15 @@ export class KeeperView {
   private lampVisible: Uint8Array = new Uint8Array(0);
 
   constructor() {
-    const stone = new THREE.MeshLambertMaterial({ color: 0x3a3f55, flatShading: true });
+    // Stained glass: every facet of the tower an indigo, violet or teal pane, with gold trim.
     const towerHeight = KEEPER_HEIGHT - 0.45;
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.6, towerHeight, 6), stone);
-    tower.geometry.rotateY(Math.PI / 6);
-    tower.position.y = towerHeight / 2;
-    const gallery = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.42, 0.12, 6), stone);
+    const tower = mosaicPrism(0.32, 0.6, towerHeight, 6, 7, 1);
+    const gallery = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.42, 0.12, 6), trim(MOSAIC_GOLD));
     gallery.position.y = towerHeight;
 
     const glow = new THREE.MeshBasicMaterial({ color: 0xfff1b0 });
     const lamp = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), glow);
-    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.3, 6), stone);
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.3, 6), trim(MOSAIC_HOOD));
     hood.position.y = 0.3;
     // A lens pointing along the beam (+X before rotation).
     const lens = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), glow);
@@ -51,9 +50,7 @@ export class KeeperView {
     );
     this.beam.position.y = KEEPER_HEIGHT;
     this.tower.add(tower, gallery, this.head, this.beam);
-    this.plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, PLINTH_HEIGHT, 6), stone);
-    this.plinth.geometry.rotateY(Math.PI / 6);
-    this.plinth.position.y = PLINTH_HEIGHT / 2;
+    this.plinth = mosaicPrism(0.62, 0.7, PLINTH_HEIGHT, 6, 1, 1);
     this.plinth.visible = false;
     this.group.add(this.tower, this.plinth);
   }
