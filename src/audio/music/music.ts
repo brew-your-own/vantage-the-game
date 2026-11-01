@@ -16,7 +16,8 @@ const MIX: Record<Layer, { gain: number; send: number }> = {
   perc: { gain: 0.6, send: 0.15 },
   tension: { gain: 0.7, send: 0.4 },
 };
-const VOLUME = 0.55;
+/** Music level: kept about 8 dB under the gameplay sounds (see TRIM in sfx.ts). */
+const VOLUME = 0.45;
 
 /**
  * Adaptive music: composes a bar at a time from the level's identity and the latest mood,

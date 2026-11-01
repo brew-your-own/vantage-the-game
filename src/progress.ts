@@ -33,9 +33,12 @@ export function recordStars(code: number, stars: number): boolean {
   return true;
 }
 
-/** Campaign level i is open when it is the first, or the one before it has been won. */
+/**
+ * Campaign level i is open when it is the first, the one before it has been won, or it has
+ * been won itself (so a reordered campaign never locks a level you already beat).
+ */
 export function unlocked(index: number): boolean {
-  return index === 0 || bestStars(CAMPAIGN[index - 1].code) > 0;
+  return index === 0 || bestStars(CAMPAIGN[index - 1].code) > 0 || bestStars(CAMPAIGN[index].code) > 0;
 }
 
 export function totalStars(): number {

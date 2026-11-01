@@ -9,6 +9,23 @@ export interface Settings {
   music: boolean;
   /** The Keeper's spoken taunts. */
   voice: boolean;
+  /** Blue / orange instead of green / red, and a striped Keeper's-sight overlay. */
+  colorBlind: boolean;
+  /** No pulsing, bobbing or swaying. Defaults to the system's reduced-motion setting. */
+  reducedMotion: boolean;
+  /** Scale of all on-screen text. */
+  textSize: number;
+}
+
+/** Text sizes the menu cycles through. */
+export const TEXT_SIZES = [1, 1.25, 1.5];
+
+function systemReducedMotion(): boolean {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
 }
 
 export function loadSettings(): Settings {
@@ -25,6 +42,9 @@ export function loadSettings(): Settings {
     muted: raw.muted === true,
     music: raw.music !== false,
     voice: raw.voice !== false,
+    colorBlind: raw.colorBlind === true,
+    reducedMotion: typeof raw.reducedMotion === 'boolean' ? raw.reducedMotion : systemReducedMotion(),
+    textSize: TEXT_SIZES.includes(raw.textSize as number) ? (raw.textSize as number) : 1,
   };
 }
 

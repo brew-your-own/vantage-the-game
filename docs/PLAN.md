@@ -262,7 +262,7 @@ Each milestone ends in something playable or testable, and gets its own commit o
 | M7 | Look & SFX *(done)*          | Per-level palettes (retro post-process tried and dropped), procedural sound effects, title/pause menus, key remapping. |
 | M8 | Adaptive music *(done)*      | Look-ahead scheduler and instruments; seeded level identity (key/mode/tempo/progression/motif); the six layers; mood signals wired from the sim; stingers; win/lose endings; music & SFX volume controls; a dev-only mood debug panel (sliders to fake each signal). Done when every row of the mood table can be clearly heard. |
 | M9 | Ship *(done)*                | GitHub Actions workflow → GitHub Pages; README with play link and controls.  |
-| M10| Polish (stretch)             | Tutorial level *(done)*, fair random codes *(done)*, balance pass (game and music mix), accessibility (colour-blind palettes, reduced motion), gamepad. |
+| M10| Polish (stretch)             | Tutorial level *(done)*, fair random codes *(done)*, title screen *(done)*, balance pass (game and music mix) *(done)*, accessibility (colour-blind mode, reduced motion, text size) *(done)*, gentler tutorial *(done)*; gamepad dropped (touchpad play to be checked instead). |
 
 Music comes after M6 because it needs the full set of game signals (beam, Moths, Relays,
 win/lose) to react to. `music/theory.ts` and `music/composer.ts` are pure code with no
@@ -290,6 +290,36 @@ whose beam sweeps the word (letters light up and cast shadows), a slowly driftin
 the menu low and see-through in front, with a GitHub link and the build version. The version
 comes from `git describe --tags` at build time (`vite.config.ts`); CI checks out full history
 so tags are found, and pushing a `v*` tag redeploys.
+
+**As built (M10, part 3).** *Balance*: `scripts/solver.ts` is a greedy bot that plays by the
+real rules: with time frozen it harvests everything in reach, drains any Relay it can, else
+climbs (a 1–3 Shard tower or a 2–3 level Spire) to the spot scoring best (Relays drainable,
+then nearness to the next Relay, then height), and takes the summit; in real time it replays
+that plan at a set pace, swats Moths after a 2.5 s reaction, never hides, and re-plans when
+the world has moved on. `npm run playtest` prints a table per campaign level. It showed every
+level won in one or two climbs with 55–95 energy to spare, level 20 no harder than level 1:
+from one high spot every Relay could be drained. Changes: Relays must now be drained from
+within a reach (a new rule, shown in the target hint), and a per-level ramp in
+`difficulty()` (`src/core/levels.ts`) takes reach from 10 to 7 tiles, moss from 8% to 4% of
+tiles, the beam to 1.4× speed and 1.6× drain, and Moth hatching to 2.5×. The bot now needs
+2–6 climbs, and a careless player (bot at 5 s per action) loses about 15 energy on early levels
+and 25–30 late, and still wins every level. `npm run curate` now orders the campaign by the
+bot's time at mid difficulty, quickest first, and skips codes it cannot win; a test checks
+every campaign level can be won. A level already beaten stays open if the order changes.
+*Mix*: measured on the audio bus, the frequent cues (harvest, swat, drained, grew) sat no
+louder than the music's loud moments, while rarer sounds were 6 dB louder. Each effect now
+has a trim (`TRIM` in `src/audio/sfx.ts`) so cues land within 1 dB of each other, about 8 dB
+over the music, big events 2 dB above that; a limiter guards the bus. *Accessibility*: a
+colour-blind mode (blue / orange target, magenta striped Keeper's sight), a "can't act"
+target that differs in shape too (dashed, unfilled) for everyone, reduced motion (defaults
+to the system setting: no pulsing, bobbing or title sway) and a text size setting (100,
+125, 150%). *Tutorial*: no Moths hatch until the Moth lesson is done, and the beam drains at
+half rate. *Beam hold* (after playtesting): the beam stops on the Wisp when it finds it and
+centres on it while the Wisp stays inside the beam; it lets go once the Wisp is out of the
+beam (past its edge or in cover) or scatters, and sweeps on. It also stops on an empty Husk
+it lights and drains it, one unit per drain interval, into moss on random tiles; the Husk
+thins as it empties and is gone at 0, then the sweep resumes. The Wisp has priority over a
+Husk, so a Husk left behind when you transfer away is a decoy that buys a few seconds.
 
 ## 5. Testing strategy
 - **Unit tests (Vitest)** for everything in `src/core`: PRNG determinism, hex math, terrain

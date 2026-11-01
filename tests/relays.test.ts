@@ -66,6 +66,16 @@ describe('draining a Relay', () => {
     expect(applyIntent(w, { type: 'harvest', cell: relay }).ok).toBe(false);
   });
 
+  it('must be within reach, when the level sets one', () => {
+    raise(w, 2);
+    w.relayReach = 1;
+    const r = applyIntent(w, { type: 'harvest', cell: relay });
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.reason).toMatch(/within 1 tiles/);
+    w.relayReach = 2;
+    expect(applyIntent(w, { type: 'harvest', cell: relay }).ok).toBe(true);
+  });
+
   it('is blocked by a wall in between', () => {
     raise(w, 2);
     for (let i = 0; i < 6; i++) spawn(w, at(w, 1, 0), 'shard');

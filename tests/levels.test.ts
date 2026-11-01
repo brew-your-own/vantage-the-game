@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { playerInLampSight } from '../src/core/keeper';
 import { CAMPAIGN, ENERGY_STAR, campaignIndex, specFor, starsFor } from '../src/core/levels';
+import { solveLevel } from '../scripts/solver';
 import { DEFAULT_TERRAIN, generateTerrain } from '../src/core/terrain';
 import { createWorld } from '../src/core/world';
 import { arena } from './helpers/worlds';
@@ -15,9 +16,23 @@ describe('the campaign', () => {
     for (let i = 1; i < relays.length; i++) expect(relays[i]).toBeGreaterThanOrEqual(relays[i - 1]);
   });
 
+  it('gets harder: closer reach, less moss, a faster and harsher beam, more Moths', () => {
+    const first = CAMPAIGN[0].options;
+    const last = CAMPAIGN[CAMPAIGN.length - 1].options;
+    expect(last.relayReach!).toBeLessThan(first.relayReach!);
+    expect(last.mossDensity!).toBeLessThan(first.mossDensity!);
+    expect(last.beamScale!).toBeGreaterThan(first.beamScale!);
+    expect(last.drainScale!).toBeGreaterThan(first.drainScale!);
+    expect(last.hatchScale!).toBeGreaterThan(first.hatchScale!);
+  });
+
+  it('every level can be won (by the playtest bot, with time frozen)', () => {
+    for (const spec of CAMPAIGN) expect(solveLevel(spec.code, spec.options).won, `code ${spec.code}`).toBe(true);
+  }, 120_000);
+
   it('every level starts hidden from the Keeper with all its Relays placed', () => {
     for (const spec of CAMPAIGN) {
-      const w = createWorld(generateTerrain({ ...DEFAULT_TERRAIN, seed: spec.code }), spec.code, { relays: spec.relays });
+      const w = createWorld(generateTerrain({ ...DEFAULT_TERRAIN, seed: spec.code }), spec.code, spec.options);
       expect(w.relays).toHaveLength(spec.relays);
       expect(playerInLampSight(w)).toBe(false);
     }
@@ -31,7 +46,7 @@ describe('the campaign', () => {
 });
 
 describe('stars', () => {
-  const spec = { code: 1, relays: 3, par: 300 };
+  const spec = { code: 1, relays: 3, par: 300, options: { relays: 3 } };
   it('none until won, then one per goal', () => {
     const w = arena(ENERGY_STAR);
     expect(starsFor(w, spec)).toBe(0);

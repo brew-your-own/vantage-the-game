@@ -19,9 +19,34 @@ export type SfxName =
   | 'grew'
   | 'click';
 
+/**
+ * Level trim per sound, in dB, from measuring each one's short-term loudness on the bus:
+ * gameplay cues all land about 8 dB above the music's loud moments, the big events (a
+ * Relay, the lamp going out, win, lose) a little louder, the menu click well below.
+ */
+const TRIM: Record<SfxName, number> = {
+  harvest: 6.5,
+  swat: 7.5,
+  place: 3,
+  feed: 1.5,
+  transfer: 0.5,
+  scatter: 5,
+  fail: 4,
+  relay: 6.5,
+  dark: 6.5,
+  win: 2.5,
+  lose: 7.5,
+  drained: 7,
+  leeched: 0,
+  grew: 5.5,
+  click: 3.5,
+};
+
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /** Where the sound being played connects: a trim gain into the master bus. */
+  private bus: AudioNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private hum: { gain: GainNode; osc: OscillatorNode[]; filter: BiquadFilterNode } | null = null;
   private _muted = false;
@@ -48,7 +73,14 @@ export class Sfx {
       this.ctx = new Ctx();
       this.master = this.ctx.createGain();
       this.master.gain.value = this._muted ? 0 : 0.5;
-      this.master.connect(this.ctx.destination);
+      // A limiter, so stacked sounds over the music never clip.
+      const limiter = this.ctx.createDynamicsCompressor();
+      limiter.threshold.value = -6;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.15;
+      this.master.connect(limiter).connect(this.ctx.destination);
       const len = this.ctx.sampleRate;
       this.noiseBuffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const data = this.noiseBuffer.getChannelData(0);
@@ -69,6 +101,10 @@ export class Sfx {
   play(name: SfxName): void {
     if (!this.ctx || this._muted) return;
     const t = this.ctx.currentTime;
+    const trim = this.ctx.createGain();
+    trim.gain.value = 10 ** (TRIM[name] / 20);
+    trim.connect(this.master!);
+    this.bus = trim;
     switch (name) {
       case 'harvest':
         this.tone(440, t, 0.09, 'square', 0.15, 880);
@@ -138,7 +174,7 @@ export class Sfx {
     gain.gain.setValueAtTime(0.0001, at);
     gain.gain.exponentialRampToValueAtTime(vol, at + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    osc.connect(gain).connect(this.master!);
+    osc.connect(gain).connect(this.bus!);
     osc.start(at);
     osc.stop(at + dur + 0.02);
   }
@@ -155,7 +191,7 @@ export class Sfx {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(vol, at);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    src.connect(filter).connect(gain).connect(this.master!);
+    src.connect(filter).connect(gain).connect(this.bus!);
     src.start(at);
     src.stop(at + dur + 0.02);
   }

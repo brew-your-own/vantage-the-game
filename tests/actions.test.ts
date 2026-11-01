@@ -120,6 +120,22 @@ describe('transfer', () => {
 });
 
 describe('scatter', () => {
+  it('shakes off the beam', () => {
+    const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed: 21 });
+    const w = createWorld(terrain, 21);
+    let highest = 0;
+    terrain.heights.forEach((h, i) => {
+      if (h > terrain.heights[highest] && i !== w.keeper.cell) highest = i;
+    });
+    w.stacks[w.player.cell].length = 0;
+    w.stacks[highest].length = 0;
+    w.player.cell = highest;
+    spawn(w, highest, 'husk');
+    w.keeper.locked = true;
+    expect(applyIntent(w, { type: 'scatter' }).ok).toBe(true);
+    expect(w.keeper.locked).toBe(false);
+  });
+
   it('lands on a lower empty tile and conserves energy', () => {
     const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed: 21 });
     const w = createWorld(terrain, 21);

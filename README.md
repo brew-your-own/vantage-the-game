@@ -14,9 +14,13 @@ Inspired by Geoff Crammond's [*The Sentinel*](https://en.wikipedia.org/wiki/The_
 New? Open the menu (M) and play the **tutorial**: fourteen short steps, on a gentler level.
 
 You are a Wisp on a hex landscape watched by the Keeper, whose lamp sweeps a beam across
-the land. Standing in the beam drains your energy. Harvest energy from the land, build
-Shards to gain height, and transfer into Husks to move. Drain every Relay to put the
-Keeper's lamp out, then transfer onto the Keeper's plinth to win.
+the land. When the beam finds you it stops and holds you, draining your energy, until you
+get out of it: transfer past its edge or into cover, or scatter. It also stops on any empty
+Husk you left in its path and drains it into moss, so an old Husk makes a decoy. Harvest energy from the land, build
+Shards to gain height, and transfer into Husks to move. Drain every Relay (from higher than
+its top, and close enough: 10 tiles on the first levels, 7 on the last) to put the Keeper's
+lamp out, then transfer onto the Keeper's plinth to win. Later levels have less moss, a
+faster, harsher beam and more Moths.
 
 | Key | Action |
 | --- | --- |
@@ -34,6 +38,8 @@ Keeper's lamp out, then transfer onto the Keeper's plinth to win.
 | M | menu: levels, level code, settings, key remapping |
 
 All game keys can be remapped in the menu. Progress and settings are saved in the browser.
+Under controls & settings there are also a colour-blind mode, reduced motion (on by default
+when your system asks for it) and a text size.
 
 The Keeper taunts you aloud, with subtitles. It speaks only with voices installed on your
 computer (never the browser's online voices), so nothing leaves your machine; with no local
@@ -46,7 +52,8 @@ npm install
 npm run dev      # dev server
 npm test         # unit tests
 npm run build    # static build in dist/ (GitHub Pages-ready)
-npm run curate   # re-pick the campaign levels (writes src/core/campaignData.ts)
+npm run curate   # re-pick and order the campaign levels (writes src/core/campaignData.ts)
+npm run playtest # a bot plays every campaign level: climbs, energy, beam and Moth losses
 npm run balance  # Moth pressure on an idle Wisp, per campaign level
 npm run pick-tutorial  # list level codes whose tutorial route works
 ```

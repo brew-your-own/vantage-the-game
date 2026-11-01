@@ -1,6 +1,6 @@
 import { BEAM, ECOLOGY } from './constants';
 import { hexDistance } from './hex';
-import { bearingFromKeeper, inBeamWedge, lampCanSee, playerLit } from './keeper';
+import { bearingFromKeeper, findLitHusk, huskInBeam, inBeamWedge, lampCanSee, playerLit } from './keeper';
 import { Rng } from './rng';
 import { cellTop } from './surface';
 import {
@@ -8,8 +8,10 @@ import {
   type World,
   beamParams,
   columnTop,
+  entityEnergy,
   isStructure,
   keeperDark,
+  playerEye,
   spawn,
   spawnMoth,
   supportY,
@@ -19,6 +21,8 @@ export type LossCause = 'beam' | 'moth';
 
 export type SimEvent =
   | { type: 'drained'; energy: number; mossCell: number }
+  /** The beam drained a unit out of an empty Husk; `left` is what it still holds (0: gone). */
+  | { type: 'huskDrained'; cell: number; left: number; mossCell: number }
   | { type: 'leeched'; cell: number }
   | { type: 'hatched'; cell: number }
   | { type: 'mothAte'; cell: number }
@@ -37,7 +41,7 @@ export function step(world: World, dt: number): SimEvent[] {
   world.time += dt;
   // Once every Relay is drained the lamp is dark: no beam, no drain, no hatching.
   const dark = keeperDark(world);
-  if (!dark) world.keeper.yaw = (world.keeper.yaw + beamParams(world).speed * dt) % (Math.PI * 2);
+  if (!dark) turnBeam(world, dt);
 
   if (!dark) beamDrain(world, dt, rng, events);
   growSpires(world, dt, events);
@@ -46,6 +50,34 @@ export function step(world: World, dt: number): SimEvent[] {
 
   world.rngState = rng.state;
   return events;
+}
+
+const TAU = Math.PI * 2;
+
+/**
+ * The beam sweeps until it finds the Wisp, then holds it, centring on it (at BEAM.trackSpeed)
+ * for as long as the Wisp stays inside the beam. Once the Wisp is out of the beam (it
+ * transferred beyond the beam's edge, or into cover), the beam lets go and sweeps on.
+ */
+function turnBeam(world: World, dt: number): void {
+  const k = world.keeper;
+  k.locked = playerLit(world);
+  if (k.locked) {
+    k.husk = undefined;
+    return centreOn(world, bearingFromKeeper(world, playerEye(world)), dt);
+  }
+  if (k.husk !== undefined && !huskInBeam(world, k.husk)) k.husk = undefined;
+  k.husk ??= findLitHusk(world);
+  if (k.husk !== undefined) return centreOn(world, bearingFromKeeper(world, cellTop(world.terrain, k.husk)), dt);
+  k.yaw = (k.yaw + beamParams(world).speed * dt) % TAU;
+}
+
+/** Turns the beam toward a bearing, at most BEAM.trackSpeed. */
+function centreOn(world: World, target: number, dt: number): void {
+  const k = world.keeper;
+  const d = ((((target - k.yaw + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
+  const max = BEAM.trackSpeed * dt;
+  k.yaw = (((k.yaw + Math.max(-max, Math.min(max, d))) % TAU) + TAU) % TAU;
 }
 
 /** Spends one unit of the Wisp's energy, or ends the game if there is none left. */
@@ -62,10 +94,11 @@ function drainWisp(world: World, cause: LossCause, events: SimEvent[]): boolean 
 
 function beamDrain(world: World, dt: number, rng: Rng, events: SimEvent[]): void {
   if (!playerLit(world)) {
+    if (world.keeper.husk !== undefined) return drainHusk(world, world.keeper.husk, dt, rng, events);
     world.drainClock = 0;
     return;
   }
-  world.drainClock += dt;
+  world.drainClock += dt * (world.drainScale ?? 1);
   while (world.drainClock >= BEAM.drainInterval && world.status === 'playing') {
     world.drainClock -= BEAM.drainInterval;
     if (!drainWisp(world, 'beam', events)) break;
@@ -73,6 +106,27 @@ function beamDrain(world: World, dt: number, rng: Rng, events: SimEvent[]): void
     const mossCell = randomEmptyCell(world, rng);
     if (mossCell >= 0) spawn(world, mossCell, 'moss');
     events.push({ type: 'drained', energy: 1, mossCell });
+  }
+}
+
+/** The beam drains a held Husk one unit at a time into moss; an empty Husk is gone. */
+function drainHusk(world: World, cell: number, dt: number, rng: Rng, events: SimEvent[]): void {
+  world.drainClock += dt * (world.drainScale ?? 1);
+  while (world.drainClock >= BEAM.drainInterval) {
+    world.drainClock -= BEAM.drainInterval;
+    const stack = world.stacks[cell];
+    const husk = stack[stack.length - 1];
+    husk.drained = (husk.drained ?? 0) + 1;
+    const left = entityEnergy(husk);
+    if (left <= 0) stack.pop();
+    const mossCell = randomEmptyCell(world, rng);
+    if (mossCell >= 0) spawn(world, mossCell, 'moss');
+    events.push({ type: 'huskDrained', cell, left, mossCell });
+    if (left <= 0) {
+      world.keeper.husk = undefined;
+      world.drainClock = 0;
+      return;
+    }
   }
 }
 
@@ -98,7 +152,7 @@ function hatchMoss(world: World, dt: number, rng: Rng, events: SimEvent[]): void
     if (!inBeamWedge(world, bearingFromKeeper(world, t))) return;
     if (!lampCanSee(world, { x: t.x, y: t.y + 0.05, z: t.z }, cell)) return;
     top.lit = (top.lit ?? 0) + dt;
-    if (rng.next() < ECOLOGY.hatchRate * dt) {
+    if (rng.next() < ECOLOGY.hatchRate * (world.hatchScale ?? 1) * dt) {
       stack.pop();
       spawnMoth(world, cell, 1);
       events.push({ type: 'hatched', cell });

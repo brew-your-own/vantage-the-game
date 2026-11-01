@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { access, wobble } from './access';
 import { RELAY_HEIGHT } from '../core/constants';
 import { cellTop } from '../core/surface';
 import type { World } from '../core/world';
@@ -36,8 +37,8 @@ export class RelayView {
 
   animate(time: number): void {
     for (const { core, drained } of this.cores) {
-      core.rotation.y = drained ? 0 : time * 1.5;
-      const s = drained ? 0.8 : 1 + 0.15 * Math.sin(time * 4);
+      core.rotation.y = drained || access.reducedMotion ? 0 : time * 1.5;
+      const s = drained ? 0.8 : 1 + wobble(0.15 * Math.sin(time * 4));
       core.scale.setScalar(s);
     }
   }

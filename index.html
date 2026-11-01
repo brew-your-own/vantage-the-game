@@ -7,6 +7,9 @@
     <style>
       html, body { margin: 0; height: 100%; background: #000; color: #ddd; font-family: monospace; overflow: hidden; }
       #app { width: 100%; height: 100%; }
+      /* Text size setting (--text, set from the menu): scales every text panel, offsets included. */
+      #energy, #beam, #relays, #hud, #message, #taunt, #tutorial, #end, #pause, #menu > * { zoom: var(--text, 1); }
+      body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::after { transition: none !important; animation: none !important; }
       #crosshair { position: fixed; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; pointer-events: none; }
       #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #e8ecff; box-shadow: 0 0 2px #000; }
       #crosshair::before { left: 7px; top: 0; width: 2px; height: 16px; }

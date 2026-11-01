@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "curate": "tsx scripts/curate.ts",
     "balance": "tsx scripts/balance.ts",
+    "playtest": "tsx scripts/playtest.ts",
     "pick-tutorial": "tsx scripts/pickTutorial.ts"
   },
   "dependencies": {

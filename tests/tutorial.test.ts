@@ -3,7 +3,8 @@ import { isFairCode, randomFairCode, seededRandom } from '../src/core/fair';
 import { CAMPAIGN, TUTORIAL, TUTORIAL_OPTIONS } from '../src/core/levels';
 import { DEFAULT_TERRAIN, generateTerrain } from '../src/core/terrain';
 import { createWorld } from '../src/core/world';
-import { STEPS, type TutorialSignal, advance } from '../src/tutorial';
+import { step as simStep } from '../src/core/sim';
+import { MOTH_STEP, STEPS, type TutorialSignal, advance, tutorialHatchScale } from '../src/tutorial';
 import { MAX_CLIMBS, applyStep, tutorialRoute } from '../scripts/tutorialRoute';
 
 const SLOW = 30_000;
@@ -34,6 +35,19 @@ describe('the tutorial', () => {
     }
     expect(w.status).toBe('won');
     expect(step).toBe(STEPS.length);
+  }, SLOW);
+
+  it('hatches no Moths of its own accord until the Moth lesson is done', () => {
+    const w = createWorld(generateTerrain({ ...DEFAULT_TERRAIN, seed: TUTORIAL.code }), TUTORIAL.code, TUTORIAL_OPTIONS);
+    let hatched = 0;
+    for (let t = 0; t < 300; t += 0.05) {
+      w.player.energy = 15;
+      hatched += simStep(w, 0.05).filter((e) => e.type === 'hatched').length;
+    }
+    expect(hatched).toBe(0);
+    expect(tutorialHatchScale(0)).toBe(0);
+    expect(tutorialHatchScale(MOTH_STEP)).toBe(0);
+    expect(tutorialHatchScale(MOTH_STEP + 1)).toBe(1);
   }, SLOW);
 
   it('never gets stuck when things are done early', () => {

@@ -19,7 +19,7 @@ let deaths = 0;
 const rows: string[] = [];
 for (const spec of CAMPAIGN) {
   const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed: spec.code });
-  const w = createWorld(terrain, spec.code, { relays: spec.relays });
+  const w = createWorld(terrain, spec.code, spec.options);
   let leeched = 0;
   let drained = 0;
   let firstLeech = -1;

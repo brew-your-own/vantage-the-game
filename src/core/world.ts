@@ -38,6 +38,8 @@ export interface Entity {
   grow?: number;
   /** Moss: seconds spent in the beam (for display; hatching is a per-second chance). */
   lit?: number;
+  /** Husk: energy the Keeper's beam has drained out of it so far. */
+  drained?: number;
 }
 
 /** A Moth: drifts from tile to tile toward energy, eats moss, and drains the Wisp. */
@@ -55,7 +57,7 @@ export interface Moth {
 
 /** Energy stored in an entity (a Spire holds everything fed into it). */
 export function entityEnergy(e: Entity): number {
-  return ENERGY[e.kind] + (e.fed ?? 0);
+  return ENERGY[e.kind] + (e.fed ?? 0) - (e.drained ?? 0);
 }
 
 /** Solid height an entity adds to its tile's column. */
@@ -96,6 +98,16 @@ export interface Keeper {
   readonly cell: number;
   /** Horizontal direction of the beam's centre, radians (bearing = atan2(dz, dx)). */
   yaw: number;
+  /**
+   * The beam has found the Wisp and holds it: it stops sweeping and follows the Wisp until
+   * the Wisp is out of the beam (or scatters).
+   */
+  locked?: boolean;
+  /**
+   * The tile of an empty Husk the beam has found and holds while it drains it into moss.
+   * The Wisp comes first: the beam leaves a Husk to hold a Wisp it finds.
+   */
+  husk?: number;
 }
 
 export type GameStatus = 'playing' | 'lost' | 'won';
@@ -112,6 +124,14 @@ export interface WorldOptions {
   relays: number;
   /** Beam turning speed multiplier (the tutorial uses a slower beam). Default 1. */
   beamScale?: number;
+  /** Relays can only be drained from within this many tiles. Default: any distance. */
+  relayReach?: number;
+  /** Fraction of tiles that start with moss. Default MOSS_DENSITY. */
+  mossDensity?: number;
+  /** Moth hatching rate multiplier. Default 1. */
+  hatchScale?: number;
+  /** Beam drain rate multiplier (energy per second in the beam). Default 1. */
+  drainScale?: number;
   /** Energy the Wisp starts with. Default START_ENERGY. */
   startEnergy?: number;
   /** Where the Keeper stands (the title screen places it). Default: picked from the terrain. */
@@ -141,11 +161,17 @@ export interface World {
   nextId: number;
   /** Beam speed multiplier from WorldOptions; absent means 1. */
   beamScale?: number;
+  /** Relay drain reach in tiles from WorldOptions; absent means any distance. */
+  relayReach?: number;
+  /** Hatching rate multiplier from WorldOptions; absent means 1. */
+  hatchScale?: number;
+  /** Beam drain rate multiplier from WorldOptions; absent means 1. */
+  drainScale?: number;
 }
 
 export const START_ENERGY = 10;
-/** Fraction of tiles that start with moss on them. */
-const MOSS_DENSITY = 0.1;
+/** Fraction of tiles that start with moss on them, by default. */
+export const MOSS_DENSITY = 0.1;
 
 export function createWorld(terrain: Terrain, seed: number, options: WorldOptions = DEFAULT_OPTIONS): World {
   const stacks: Entity[][] = terrain.grid.cells.map(() => []);
@@ -175,11 +201,14 @@ export function createWorld(terrain: Terrain, seed: number, options: WorldOption
     rngState: (seed ^ 0x9e3779b9) >>> 0,
     nextId: 1,
     beamScale: options.beamScale ?? 1,
+    relayReach: options.relayReach,
+    hatchScale: options.hatchScale,
+    drainScale: options.drainScale,
   };
   spawn(world, world.player.cell, 'husk');
 
   for (let i = 0; i < terrain.grid.count; i++) {
-    if (i !== world.player.cell && !isStructure(world, i) && rng.next() < MOSS_DENSITY) spawn(world, i, 'moss');
+    if (i !== world.player.cell && !isStructure(world, i) && rng.next() < (options.mossDensity ?? MOSS_DENSITY)) spawn(world, i, 'moss');
   }
   return world;
 }

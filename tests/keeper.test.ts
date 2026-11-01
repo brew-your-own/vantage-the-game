@@ -130,19 +130,102 @@ describe('the beam', () => {
     expect(beamEta(w)).toBe(0);
   });
 
-  it('a lit pass drains about the beam width over the speed', () => {
+  it('holds the Wisp once it finds it, draining steadily', () => {
     const w = arena(50, -0.5);
-    // Beam only: no Moths hatching from the drained moss.
     const rate = ECOLOGY.hatchRate;
     ECOLOGY.hatchRate = 0;
     try {
-      run(w, 36); // one full rotation
+      run(w, 36);
     } finally {
       ECOLOGY.hatchRate = rate;
     }
-    const expected = Math.floor((2 * BEAM.halfAngle) / BEAM.speed / BEAM.drainInterval);
-    expect(50 - w.player.energy).toBeGreaterThanOrEqual(expected - 1);
-    expect(50 - w.player.energy).toBeLessThanOrEqual(expected + 1);
+    // The beam reaches the Wisp within a few seconds, then never lets go.
+    const reach = (0.5 - BEAM.halfAngle) / BEAM.speed;
+    expect(w.keeper.locked).toBe(true);
+    expect(50 - w.player.energy).toBeGreaterThanOrEqual(Math.floor(36 - reach) - 1);
+    expect(playerLit(w)).toBe(true);
+  });
+
+  it('lets go when the lamp loses sight of the Wisp, and sweeps on', () => {
+    const w = arena(50, -0.5);
+    run(w, 5);
+    expect(w.keeper.locked).toBe(true);
+    // A wall between the Keeper (0,0) and the Wisp (3,0).
+    for (let i = 0; i < 8; i++) spawn(w, w.terrain.grid.indexOf(2, 0), 'shard');
+    const yaw = w.keeper.yaw;
+    run(w, 1);
+    expect(w.keeper.locked).toBe(false);
+    expect(w.keeper.yaw).toBeCloseTo(yaw + BEAM.speed, 1);
+  });
+
+  it('lets go as soon as the Wisp transfers out of the beam, even in open ground', () => {
+    const w = arena(50, -0.5);
+    run(w, 5);
+    expect(w.keeper.locked).toBe(true);
+    // Move the body to the far side of the Keeper: still in the lamp's sight, but not in the beam.
+    const body = w.stacks[w.player.cell].pop()!;
+    const away = w.terrain.grid.indexOf(-3, 0);
+    w.stacks[away].push(body);
+    w.player.cell = away;
+    expect(playerInLampSight(w)).toBe(true);
+    expect(playerLit(w)).toBe(false);
+    const yaw = w.keeper.yaw;
+    run(w, 1);
+    expect(w.keeper.locked).toBe(false);
+    expect(w.keeper.yaw).toBeCloseTo(yaw + BEAM.speed, 1);
+  });
+
+  it('holds an empty Husk it finds, drains it into moss, then sweeps on', () => {
+    const w = arena(5, Math.PI); // pointing away from the Wisp, at (-3,0)
+    const husk = w.terrain.grid.indexOf(-3, 0);
+    spawn(w, husk, 'husk');
+    const total = totalEnergy(w);
+    const moss = () => w.stacks.filter((s) => s[0]?.kind === 'moss').length;
+    const rate = ECOLOGY.hatchRate;
+    ECOLOGY.hatchRate = 0;
+    try {
+      run(w, 1.5);
+      expect(w.keeper.husk).toBe(husk);
+      expect(w.keeper.yaw).toBeCloseTo(Math.PI, 1);
+      expect(w.stacks[husk][0].drained).toBe(1);
+      run(w, 1.6);
+      expect(w.stacks[husk]).toHaveLength(0);
+      expect(moss()).toBe(3);
+      expect(totalEnergy(w)).toBe(total);
+      expect(w.player.energy).toBe(5);
+      const yaw = w.keeper.yaw;
+      run(w, 1);
+      expect(w.keeper.husk).toBeUndefined();
+      expect(w.keeper.yaw).toBeCloseTo(yaw + BEAM.speed, 1);
+    } finally {
+      ECOLOGY.hatchRate = rate;
+    }
+  });
+
+  it('a Husk left behind in the beam is a decoy: the beam drains it instead of following', () => {
+    const w = arena(50, -0.5);
+    run(w, 5);
+    expect(w.keeper.locked).toBe(true);
+    const old = w.player.cell;
+    // Transfer to a new Husk on the far side, leaving the old one in the beam.
+    const away = w.terrain.grid.indexOf(-3, 0);
+    spawn(w, away, 'husk');
+    w.player.cell = away;
+    run(w, 0.5);
+    expect(w.keeper.locked).toBe(false);
+    expect(w.keeper.husk).toBe(old);
+    run(w, 3);
+    expect(w.stacks[old]).toHaveLength(0);
+    expect(w.keeper.husk).toBeUndefined();
+  });
+
+  it('leaves a Husk for the Wisp', () => {
+    const w = arena(50, 0.2);
+    const husk = w.terrain.grid.indexOf(3, -1); // just beside the Wisp at (3,0)
+    spawn(w, husk, 'husk');
+    run(w, 0.5);
+    expect(w.keeper.locked).toBe(true);
+    expect(w.keeper.husk).toBeUndefined();
   });
 
   it('lamp visibility of tiles respects shadows', () => {

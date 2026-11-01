@@ -65,8 +65,10 @@ export const STEPS: readonly TutorialStep[] = [
   {
     title: 'Watch the Keeper',
     text: (k) =>
-      `The Keeper's beam drains you wherever it can see you. Press ${k('keeperSight')} to show those tiles in red ` +
-      `(${k('keeperSight')} again hides them). The top right tells you when the beam is coming.`,
+      `The Keeper's beam sweeps the land. When it finds you it stops and holds you, draining you, until you get ` +
+      `out of it: transfer past its edge (behind it is safest) or into cover, or press ${k('scatter')} to scatter. ` +
+      `It stops on empty Husks too, and drains them into moss. Press ${k('keeperSight')} to show ` +
+      `the tiles it can see in red (${k('keeperSight')} again hides them). The top right tells you when it is coming.`,
     done: (s) => s.type === 'keeperSight',
   },
   {
@@ -103,8 +105,9 @@ export const STEPS: readonly TutorialStep[] = [
   {
     title: 'Drain the Relay',
     text: (k) =>
-      `Find the Relay: a dark pillar with a gold light. You must be higher than its top to drain it. ` +
-      `Aim at it and press ${k('harvest')}. If it says to climb higher, grow a taller Spire or build a tower, and move up.`,
+      `Find the Relay: a dark pillar with a gold light. To drain it you must be higher than its top, and within ` +
+      `10 tiles. Aim at it and press ${k('harvest')}. If it says to climb higher or get closer, grow a Spire or build ` +
+      `a tower toward it, and move up.`,
     done: (s) => s.type === 'relayDrained',
     satisfied: (w) => keeperDark(w),
   },
@@ -114,6 +117,15 @@ export const STEPS: readonly TutorialStep[] = [
     done: (s) => s.type === 'won',
   },
 ];
+
+/** Index of the step that teaches Moths. */
+export const MOTH_STEP = STEPS.findIndex((s) => s.needsMoth);
+
+/**
+ * Moth hatching during the tutorial: none until the Moth lesson is done (the lesson hatches
+ * its own Moth), so nothing feeds on a new player who is still reading; normal after.
+ */
+export const tutorialHatchScale = (step: number) => (step > MOTH_STEP ? 1 : 0);
 
 /**
  * The step after `index` once `signal` (if any) has happened in `world`: completes the

@@ -4,7 +4,7 @@ export { BEAM };
 import { lampPosition } from './level';
 import { cellTop } from './surface';
 import { type Vec3, segmentClear } from './visibility';
-import { type World, beamParams, columnTop, keeperDark, playerEye, supportY } from './world';
+import { type World, beamParams, columnTop, entityEnergy, keeperDark, playerEye, supportY } from './world';
 
 
 const TAU = Math.PI * 2;
@@ -64,6 +64,19 @@ export function keeperSightTiles(world: World): Uint8Array {
   return out;
 }
 
+/** Is there an empty Husk (not the Wisp's body) on `cell` that the beam lights right now? */
+export function huskInBeam(world: World, cell: number): boolean {
+  const stack = world.stacks[cell];
+  if (cell === world.player.cell || stack[stack.length - 1]?.kind !== 'husk') return false;
+  return inBeamWedge(world, bearingFromKeeper(world, cellTop(world.terrain, cell))) && keeperSeesBodyAt(world, cell);
+}
+
+/** The first empty Husk the beam lights, if any. */
+export function findLitHusk(world: World): number | undefined {
+  for (let i = 0; i < world.stacks.length; i++) if (huskInBeam(world, i)) return i;
+  return undefined;
+}
+
 /** Is the player lit by the beam right now? */
 export function playerLit(world: World): boolean {
   return inBeamWedge(world, bearingFromKeeper(world, playerEye(world))) && playerInLampSight(world);
@@ -78,7 +91,11 @@ export function beamEta(world: World): number | null {
   const bearing = bearingFromKeeper(world, playerEye(world));
   if (inBeamWedge(world, bearing)) return 0;
   const beam = beamParams(world);
-  return wrap(bearing - beam.halfAngle - world.keeper.yaw) / beam.speed;
+  // Busy draining a Husk, the beam waits until the Husk is empty, then sweeps on from there.
+  const husk = world.keeper.husk;
+  const stack = husk === undefined ? [] : world.stacks[husk];
+  const hold = husk === undefined ? 0 : (entityEnergy(stack[stack.length - 1]) * BEAM.drainInterval - world.drainClock) / (world.drainScale ?? 1);
+  return hold + wrap(bearing - beam.halfAngle - world.keeper.yaw) / beam.speed;
 }
 
 /** Is a tile's top lit right now? `inSight` is the precomputed lamp visibility of the tile. */

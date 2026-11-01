@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { type ActionResult, type Intent, SCATTER_COST, applyIntent, occludersOf } from './core/actions';
+import { type ActionResult, type Intent, SCATTER_COST, applyIntent, inRelayReach, occludersOf } from './core/actions';
 import { cellTop } from './core/surface';
 import { DEFAULT_TERRAIN, generateTerrain } from './core/terrain';
 import { beamEta, keeperSightTiles, lampVisibleTiles, playerLit } from './core/keeper';
@@ -9,13 +9,12 @@ import {
   ENERGY_STAR,
   type LevelSpec,
   TUTORIAL,
-  TUTORIAL_OPTIONS,
   campaignIndex,
   specFor,
   starsFor,
 } from './core/levels';
 import { isFairCode, randomFairCode } from './core/fair';
-import { STEPS, type TutorialSignal, advance, hatchTutorialMoth } from './tutorial';
+import { STEPS, type TutorialSignal, advance, hatchTutorialMoth, tutorialHatchScale } from './tutorial';
 import { type LossCause, step } from './core/sim';
 import { castRay, visibleCells } from './core/visibility';
 import { RELAY_ENERGY, SPIRE_FEED_COST } from './core/constants';
@@ -47,8 +46,9 @@ import { MoodPanel } from './audio/music/moodPanel';
 import { TauntDirector, type TauntTrigger } from './audio/taunts';
 import { KeeperVoice } from './audio/voice';
 import { ACTIONS, ACTION_LABELS, DEFAULT_KEYS, type GameAction, actionFor, keyLabel, rebind } from './input/keymap';
-import { loadSettings, saveSettings } from './settings';
+import { TEXT_SIZES, loadSettings, saveSettings } from './settings';
 import { TargetHighlight, VisibilityOverlay, createWispMarker } from './render/overlays';
+import { access, wobble } from './render/access';
 import { GameScene } from './render/scene';
 import { buildTerrainGeometry } from './render/terrainMesh';
 
@@ -120,6 +120,18 @@ const entities = new EntityView();
 const keeperView = new KeeperView();
 /** Tiles where a Wisp would be in the Keeper's sight (K). Computed only while shown. */
 const keeperOverlay = new VisibilityOverlay(0xff3020, 0.4);
+
+/** Applies the accessibility settings to the renderers and the page. */
+function applyAccess(): void {
+  access.colorBlind = settings.colorBlind;
+  access.reducedMotion = settings.reducedMotion;
+  // Colour-blind: magenta stripes, which read on every palette and without colour at all.
+  if (settings.colorBlind) keeperOverlay.setStyle(0xff3ce0, 0.6, true);
+  else keeperOverlay.setStyle(0xff3020, 0.4, false);
+  document.documentElement.style.setProperty('--text', String(settings.textSize));
+  document.body.classList.toggle('reduced-motion', settings.reducedMotion);
+}
+applyAccess();
 const mothView = new MothView();
 const relayView = new RelayView();
 view.scene.add(
@@ -159,7 +171,7 @@ let mode: 'first-person' | 'orbit' = 'first-person';
 let messageTimer = 0;
 
 /** A random level code that passes the fairness checks (the Keeper can't see everything). */
-const randomCode = () => randomFairCode({ relays: specFor(0).relays }, Math.random);
+const randomCode = () => randomFairCode(specFor(0).options, Math.random);
 
 function loadLevel(code: number, asTutorial = false): void {
   seed = code;
@@ -167,7 +179,7 @@ function loadLevel(code: number, asTutorial = false): void {
   spec = asTutorial ? TUTORIAL : specFor(code);
   const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
   setTitle(false);
-  showWorld(createWorld(terrain, seed, asTutorial ? TUTORIAL_OPTIONS : { relays: spec.relays }), paletteFor(code));
+  showWorld(createWorld(terrain, seed, spec.options), paletteFor(code));
   // Every level starts in the Wisp's eyes, even if the last one ended in orbit view.
   if (mode !== 'first-person') setMode('first-person');
   endEl.style.display = 'none';
@@ -187,7 +199,7 @@ function loadLevel(code: number, asTutorial = false): void {
   lastYaw = look.yaw;
   renderTutorial();
   // Typed or linked codes may be harsh; random ones never are.
-  if (!asTutorial && campaignIndex(code) < 0 && !isFairCode(code, { relays: spec.relays })) {
+  if (!asTutorial && campaignIndex(code) < 0 && !isFairCode(code, spec.options)) {
     flash('a harsh level: the Keeper sees most of this land', true);
     messageTimer = 4;
   }
@@ -267,8 +279,8 @@ function showTitle(): void {
 /** Title camera: in front of the word, drifting slowly from side to side. */
 function updateTitleCamera(time: number): void {
   const { dist, height, lookY, lookZ, sway } = titleCam;
-  const a = sway * Math.sin(time * 0.07);
-  view.camera.position.set(dist * Math.sin(a), height + 1.5 * Math.sin(time * 0.05), dist * Math.cos(a));
+  const a = wobble(sway * Math.sin(time * 0.07));
+  view.camera.position.set(dist * Math.sin(a), height + wobble(1.5 * Math.sin(time * 0.05)), dist * Math.cos(a));
   view.camera.lookAt(0, lookY, lookZ);
 }
 
@@ -300,6 +312,7 @@ function tutorialSignal(signal?: TutorialSignal): void {
   const next = advance(tutorialStep, world, signal);
   if (next === tutorialStep) return;
   tutorialStep = next;
+  world.hatchScale = tutorialHatchScale(next);
   if (next < STEPS.length) sfx.play('click');
   ensureTutorialMoth(true);
   renderTutorial();
@@ -481,7 +494,9 @@ function describeTarget(cell: number): string {
   }
   const relay = relayAt(world, cell);
   if (relay && mothsOn(world, cell).length === 0) {
-    return relay.drained ? 'a drained Relay' : `a Relay (worth ${RELAY_ENERGY}) · H from higher up`;
+    if (relay.drained) return 'a drained Relay';
+    const how = inRelayReach(world, cell) ? 'H from higher up' : `get within ${world.relayReach} tiles to drain it`;
+    return `a Relay (worth ${RELAY_ENERGY}) · ${how}`;
   }
   const moths = mothsOn(world, cell);
   if (moths.length > 0) {
@@ -540,6 +555,11 @@ function simulate(dt: number): void {
         flash('−1 the light burns', true);
         sfx.play('drained');
         taunt(world.player.energy <= LOW_ENERGY ? 'lowEnergy' : 'burn');
+      }
+      if (ev.type === 'huskDrained') {
+        // A Husk is a sight blocker: once it's gone, what can be seen changes.
+        if (ev.left <= 0) sightChanged = true;
+        flash(ev.left > 0 ? `the Keeper drains a husk (${ev.left} left)` : 'the Keeper consumed a husk');
       }
       if (ev.type === 'leeched') {
         flash('−1 a moth feeds on you', true);
@@ -619,11 +639,11 @@ function updateBeamUi(): void {
     return;
   }
   const lit = playerLit(world);
-  litEl.style.opacity = lit ? String(0.55 + 0.25 * Math.sin(world.time * 8)) : '0';
+  litEl.style.opacity = lit ? String(0.6 + wobble(0.2 * Math.sin(world.time * 8))) : '0';
   const eta = lit ? 0 : beamEta(world);
   const sweep = (2 * Math.PI) / beamParams(world).speed;
   if (lit) {
-    beamEl.textContent = 'IN THE BEAM';
+    beamEl.textContent = `THE BEAM HOLDS YOU · get out of it: transfer past its edge or into cover, or ${K('scatter')} to scatter`;
     beamEl.className = 'lit';
   } else if (eta !== null && eta < 8) {
     beamEl.textContent = `beam in ${eta.toFixed(1)}s`;
@@ -643,7 +663,7 @@ function showEnd(cause: LossCause): void {
   const why = cause === 'beam' ? 'The Keeper drained your last energy.' : 'A moth fed on your last energy.';
   endEl.innerHTML =
     `<h1>YOUR LIGHT WENT OUT</h1><p>${why}</p>` +
-    '<p>[Enter] retry this level · [M] menu</p>';
+    '<p>[Enter] retry this level · [M] title screen</p>';
   endEl.style.display = 'flex';
 }
 
@@ -666,7 +686,7 @@ function showWin(): void {
     `<p>${star(true)} took the summit · ${star(world.player.energy >= ENERGY_STAR)} ${ENERGY_STAR}+ energy left (${world.player.energy})` +
     ` · ${star(world.time <= spec.par)} within par (${clockText(world.time)} / ${clockText(spec.par)})</p>` +
     (best ? '<p>new best!</p>' : '') +
-    `<p>[Enter] ${next} · [R] replay · [M] menu</p>`;
+    `<p>[Enter] ${next} · [R] replay · [M] title screen</p>`;
   endEl.style.display = 'flex';
 }
 
@@ -675,9 +695,9 @@ function showTutorialDone(): void {
   renderTutorial();
   endEl.innerHTML =
     '<h1 class="won">TUTORIAL COMPLETE</h1>' +
-    '<p>That is the whole game. Real levels have more Relays, a faster beam and hungrier moths:<br>' +
+    '<p>That is the whole game. Real levels have more Relays, to drain from ever closer, a faster beam and hungrier moths:<br>' +
     'hide from the beam, climb high, and spend your energy wisely.</p>' +
-    '<p>[Enter] level 1 · [R] replay the tutorial · [M] menu</p>';
+    '<p>[Enter] level 1 · [R] replay the tutorial · [M] title screen</p>';
   endEl.style.display = 'flex';
 }
 
@@ -694,7 +714,7 @@ function openMenu(): void {
   }).join('');
   menuEl.innerHTML =
     (title ? '' : '<h1>VANTAGE</h1>') +
-    '<p class="lead">Drain the Keeper’s Relays from above. When its lamp goes dark, take its summit.</p>' +
+    '<p class="lead">Drain the Keeper’s Relays from above and close by. When its lamp goes dark, take its summit.</p>' +
     (tutorialDone()
       ? '<p><button id="start-tutorial">replay the tutorial</button></p>'
       : '<p><button id="start-tutorial" class="primary">▶ new here? play the tutorial</button></p>') +
@@ -720,6 +740,18 @@ function openMenu(): void {
   menuEl.querySelector('#toggle-sound')!.addEventListener('click', () => toggleMute());
   menuEl.querySelector('#toggle-music')!.addEventListener('click', () => toggleMusic());
   menuEl.querySelector('#toggle-voice')!.addEventListener('click', () => toggleVoice());
+  const accessToggle = (id: string, change: () => void) =>
+    menuEl.querySelector(id)!.addEventListener('click', () => {
+      change();
+      saveSettings(settings);
+      applyAccess();
+      openMenu();
+    });
+  accessToggle('#toggle-cb', () => (settings.colorBlind = !settings.colorBlind));
+  accessToggle('#toggle-motion', () => (settings.reducedMotion = !settings.reducedMotion));
+  accessToggle('#text-size', () => {
+    settings.textSize = TEXT_SIZES[(TEXT_SIZES.indexOf(settings.textSize) + 1) % TEXT_SIZES.length];
+  });
   menuEl.querySelector('#reset-keys')!.addEventListener('click', () => {
     settings.keys = { ...DEFAULT_KEYS };
     saveSettings(settings);
@@ -769,6 +801,9 @@ function controlsHtml(): string {
     `<button id="toggle-voice" title="${voice.voiceName ? `local voice: ${voice.voiceName}` : 'no local voice found: subtitles only'}">` +
     `Keeper voice: ${settings.voice ? 'on' : 'off'}${voice.voiceName ? '' : ' (subtitles)'}</button> ` +
     '<button id="reset-keys">reset keys</button></p>' +
+    `<p><button id="toggle-cb">colour-blind mode: ${settings.colorBlind ? 'on' : 'off'}</button> ` +
+    `<button id="toggle-motion">reduced motion: ${settings.reducedMotion ? 'on' : 'off'}</button> ` +
+    `<button id="text-size">text size: ${Math.round(settings.textSize * 100)}%</button></p>` +
     `<table class="controls">${rows}</table>` +
     '<p class="keys">click a key, then press the new one · M, Esc and Enter are fixed · mouse: look, click harvests</p>' +
     '</details>'
@@ -857,7 +892,8 @@ window.addEventListener('keydown', (e) => {
     if ((key === 'm' || key === 'escape') && !title) closeMenu();
     return;
   }
-  if (key === 'm') return openMenu();
+  // A finished level has no game to go back to: M leads to the title screen instead of the pause menu.
+  if (key === 'm') return world.status === 'playing' ? openMenu() : showTitle();
   const action = actionFor(settings.keys, e.key);
   if (action === 'mute') return toggleMute();
   if (action === 'music') return toggleMusic();

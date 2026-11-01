@@ -3,6 +3,7 @@ import { HEX_SIZE, KEEPER_HEIGHT, PLINTH_HEIGHT, TOP_INSET } from '../core/const
 import { tileLit } from '../core/keeper';
 import { cellTop } from '../core/surface';
 import { type World, beamParams, keeperDark } from '../core/world';
+import { wobble } from './access';
 
 const BEAM_LENGTH = 34;
 const LIT_COLOR = new THREE.Color(0.42, 0.32, 0.09);
@@ -100,7 +101,7 @@ export class KeeperView {
     this.beam.rotation.y = -world.keeper.yaw;
     const scale = Math.tan(beamParams(world).halfAngle) / Math.tan((15 * Math.PI) / 180);
     this.beam.scale.set(1, 1, scale);
-    (this.beam.material as THREE.MeshBasicMaterial).opacity = 0.85 + 0.15 * Math.sin(time * 3);
+    (this.beam.material as THREE.MeshBasicMaterial).opacity = 0.85 + wobble(0.15 * Math.sin(time * 3));
 
     if (!this.tiles) return;
     for (let i = 0; i < this.lampVisible.length; i++) {

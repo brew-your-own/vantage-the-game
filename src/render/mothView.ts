@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { access, wobble } from './access';
 import { mothHoverY } from '../core/sim';
 import { cellTop } from '../core/surface';
 import type { Moth, World } from '../core/world';
@@ -70,7 +71,7 @@ export class MothView {
     const a = cellTop(world.terrain, moth.prevCell);
     const b = cellTop(world.terrain, moth.cell);
     const y = mothHoverY(world, moth.prevCell) * (1 - e) + mothHoverY(world, moth.cell) * e;
-    return new THREE.Vector3(a.x + (b.x - a.x) * e, y + 0.08 * Math.sin(time * 3 + moth.id), a.z + (b.z - a.z) * e);
+    return new THREE.Vector3(a.x + (b.x - a.x) * e, y + wobble(0.08 * Math.sin(time * 3 + moth.id)), a.z + (b.z - a.z) * e);
   }
 
   private place(world: World, moth: Moth, obj: MothObject, time: number): void {
@@ -78,7 +79,8 @@ export class MothView {
     const a = cellTop(world.terrain, moth.prevCell);
     const b = cellTop(world.terrain, moth.cell);
     if (moth.prevCell !== moth.cell) obj.root.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
-    const flap = Math.sin(time * 14 + moth.id) * 0.7;
+    // Wings still beat with reduced motion, slowly: a Moth is recognisable by them.
+    const flap = Math.sin(time * (access.reducedMotion ? 3 : 14) + moth.id) * 0.7;
     obj.left.rotation.z = flap;
     obj.right.rotation.z = -flap;
     obj.root.scale.setScalar(0.8 + 0.18 * Math.min(moth.energy, 6));

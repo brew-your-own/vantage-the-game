@@ -1,6 +1,7 @@
 import { Rng } from './rng';
 import { cellTop } from './surface';
 import { type SightTarget, canSeeCell, segmentClear } from './visibility';
+import { hexDistance } from './hex';
 import { RELAY_ENERGY, SPIRE_FEED_COST, SPIRE_GROW_TIME, SPIRE_MAX_LEVEL } from './constants';
 import {
   ENERGY,
@@ -144,13 +145,21 @@ function feed(world: World, cell: number): ActionResult {
   return { ok: true, events: [{ type: 'fed', cell, level: (top.level ?? 0) + 1 }] };
 }
 
+/** Is the Relay on `cell` close enough to drain (see WorldOptions.relayReach)? */
+export function inRelayReach(world: World, cell: number): boolean {
+  if (world.relayReach === undefined) return true;
+  const { cells } = world.terrain.grid;
+  return hexDistance(cells[cell], cells[world.player.cell]) <= world.relayReach;
+}
+
 /**
- * Drains a Relay. Your eye must be above its top, with a clear view of its top:
+ * Drains a Relay. It must be within reach, and your eye must be above its top, with a clear view of its top:
  * Relays are fed from the Keeper and only give way to a Wisp standing higher.
  */
 function drainRelay(world: World, cell: number): ActionResult {
   const relay = relayAt(world, cell)!;
   if (relay.drained) return fail('already drained');
+  if (!inRelayReach(world, cell)) return fail(`too far: drain it from within ${world.relayReach} tiles`);
   const eye = playerEye(world);
   const top = supportY(world, cell);
   if (eye.y <= top) return fail('climb higher than the Relay to drain it');
@@ -191,7 +200,7 @@ function transfer(world: World, cell: number): ActionResult {
 
 /**
  * Emergency jump: spends SCATTER_COST to grow a new Husk on a random empty tile lower than
- * your current body, and moves into it. Needs no line of sight.
+ * your current body, and moves into it. Needs no line of sight, and shakes off the beam.
  */
 function scatter(world: World): ActionResult {
   if (world.player.energy < SCATTER_COST) return fail(`needs ${SCATTER_COST} energy`);
@@ -210,6 +219,9 @@ function scatter(world: World): ActionResult {
   world.player.energy -= SCATTER_COST;
   spawn(world, to, 'husk');
   world.player.cell = to;
+  // The Keeper loses you: the beam sweeps on from where it held you.
+  world.keeper.locked = false;
+  world.keeper.husk = undefined;
   return {
     ok: true,
     events: [

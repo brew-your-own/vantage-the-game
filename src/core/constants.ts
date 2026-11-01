@@ -32,6 +32,8 @@ export const BEAM = {
   speed: (2 * Math.PI) / 36,
   /** Seconds in the beam per unit of energy drained. */
   drainInterval: 1,
+  /** Turning speed while the beam holds the Wisp and centres on it, radians per second (90°/s). */
+  trackSpeed: Math.PI / 2,
 };
 
 /** Height gained per Spire level (two terrain levels). */

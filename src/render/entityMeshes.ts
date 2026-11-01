@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { HUSK_HEIGHT, SHARD_HEIGHT, SPIRE_GROW_TIME, SPIRE_STEP } from '../core/constants';
 import { hash2 } from '../core/rng';
 import { cellTop } from '../core/surface';
-import { type Entity, type EntityKind, type World, entityHeight, isSupport } from '../core/world';
+import { ENERGY, type Entity, type EntityKind, type World, entityHeight, isSupport } from '../core/world';
 
 const mat = (color: number, emissive = 0x000000) =>
   new THREE.MeshLambertMaterial({ color, emissive, flatShading: true });
@@ -86,8 +86,14 @@ function objectFor(e: Entity): THREE.Object3D {
   switch (e.kind) {
     case 'shard':
       return new THREE.Mesh(SHARD_GEOMETRY, MATERIALS.shard);
-    case 'husk':
-      return huskGroup();
+    case 'husk': {
+      // A Husk the beam is draining wastes away: thinner as its energy goes (same height,
+      // since it still blocks sight as tall as before).
+      const g = huskGroup();
+      const left = 1 - (e.drained ?? 0) / ENERGY.husk;
+      g.scale.set(0.35 + 0.65 * left, 1, 0.35 + 0.65 * left);
+      return g;
+    }
     case 'moss':
       return mossGroup(e.id);
     case 'seed':
