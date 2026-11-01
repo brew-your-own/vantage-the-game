@@ -33,7 +33,12 @@ type V3 = [number, number, number];
  * - a triangle per inner vertex where three tiles meet,
  * - vertical skirts along the outer boundary plus an underside.
  */
-export function buildTerrainGeometry(terrain: Terrain, palette = DEFAULT_PALETTE): THREE.BufferGeometry {
+export function buildTerrainGeometry(
+  terrain: Terrain,
+  palette = DEFAULT_PALETTE,
+  /** Optional colour for chosen tile tops (the title screen paints its letters). */
+  topColor?: (cell: number) => THREE.ColorRepresentation | null,
+): THREE.BufferGeometry {
   const { grid, heights, params } = terrain;
   const positions: number[] = [];
   const colors: number[] = [];
@@ -65,9 +70,13 @@ export function buildTerrainGeometry(terrain: Terrain, palette = DEFAULT_PALETTE
     positions.push(...a, ...b, ...c);
     for (let k = 0; k < 3; k++) colors.push(color.r, color.g, color.b);
   };
-  const bevelColor = (hs: number[]) => {
+  const bevelColor = (cells: number[]) => {
+    const hs = cells.map((c) => heights[c]);
     const spread = Math.max(...hs) - Math.min(...hs);
-    return spread === 0 ? flat : tmp.copy(slope).multiplyScalar(1 - 0.12 * (spread - 1));
+    if (spread > 0) return tmp.copy(slope).multiplyScalar(1 - 0.12 * (spread - 1));
+    // A flat joint between custom-coloured tops takes their colour, so they read as one shape.
+    const custom = topColor && cells.every((c) => topColor(c) != null) ? topColor(cells[0]) : null;
+    return custom != null ? tmp.set(custom) : flat;
   };
 
   for (let i = 0; i < grid.count; i++) {
@@ -75,7 +84,8 @@ export function buildTerrainGeometry(terrain: Terrain, palette = DEFAULT_PALETTE
     const h = heights[i];
 
     // Tile top: lighter with altitude.
-    const top = tmp.copy(tops[(((q - r) % 3) + 3) % 3]).lerp(white, (h / params.maxHeight) * 0.25);
+    const custom = topColor?.(i);
+    const top = custom != null ? tmp.set(custom) : tmp.copy(tops[(((q - r) % 3) + 3) % 3]).lerp(white, (h / params.maxHeight) * 0.25);
     const c: V3 = [centers[i].x, h * LEVEL_HEIGHT, centers[i].z];
     for (let k = 0; k < 6; k++) triUp(c, inner(i, k), inner(i, k + 1), top);
 
@@ -83,7 +93,7 @@ export function buildTerrainGeometry(terrain: Terrain, palette = DEFAULT_PALETTE
     for (let e = 0; e < 3; e++) {
       const j = grid.neighbor(i, e);
       if (j < 0) continue;
-      const col = bevelColor([h, heights[j]]);
+      const col = bevelColor([i, j]);
       const a0 = inner(i, e), a1 = inner(i, e + 1);
       const b0 = inner(j, e + 4), b1 = inner(j, e + 3);
       triUp(a0, a1, b1, col);
@@ -95,7 +105,7 @@ export function buildTerrainGeometry(terrain: Terrain, palette = DEFAULT_PALETTE
       const b = grid.neighbor(i, k); // across edge k: my corner k is its corner k+4
       const cc = grid.neighbor(i, (k + 5) % 6); // across edge k-1: my corner k is its corner k+2
       if (b < 0 || cc < 0) continue;
-      triUp(inner(i, k), inner(b, k + 4), inner(cc, k + 2), bevelColor([h, heights[b], heights[cc]]));
+      triUp(inner(i, k), inner(b, k + 4), inner(cc, k + 2), bevelColor([i, b, cc]));
     }
   }
 

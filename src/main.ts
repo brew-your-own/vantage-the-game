@@ -37,7 +37,9 @@ import { EntityView } from './render/entityMeshes';
 import { MothView } from './render/mothView';
 import { KeeperView } from './render/keeperView';
 import { RelayView } from './render/relayView';
-import { paletteFor } from './render/palettes';
+import { type LevelPalette, PALETTES, paletteFor } from './render/palettes';
+import { titleLand } from './core/title';
+import { REPO_URL, VERSION, versionUrl } from './version';
 import { Sfx } from './audio/sfx';
 import { Music } from './audio/music/music';
 import { type Mood, NEUTRAL_MOOD, moodOf, smoothMood } from './audio/music/mood';
@@ -146,6 +148,8 @@ let tutorialStep = 0;
 let lookTravel = 0;
 let lastYaw = 0;
 let menuOpen = false;
+/** On the title screen: the word VANTAGE in the land, the Keeper sweeping it, the menu over it. */
+let title = false;
 let world: World;
 let terrainMesh: THREE.Mesh | null = null;
 /** Tiles whose ground is in view from the current body (cached until the world changes). */
@@ -162,18 +166,8 @@ function loadLevel(code: number, asTutorial = false): void {
   tutorial = asTutorial;
   spec = asTutorial ? TUTORIAL : specFor(code);
   const terrain = generateTerrain({ ...DEFAULT_TERRAIN, seed });
-  world = createWorld(terrain, seed, asTutorial ? TUTORIAL_OPTIONS : { relays: spec.relays });
-  const palette = paletteFor(code);
-  view.applyPalette(palette);
-  setPaused(false);
-  if (terrainMesh) {
-    view.scene.remove(terrainMesh);
-    terrainMesh.geometry.dispose();
-  }
-  terrainMesh = new THREE.Mesh(buildTerrainGeometry(terrain, palette), terrainMaterial);
-  view.scene.add(terrainMesh);
-  keeperView.build(world, view.scene);
-  simClock = 0;
+  setTitle(false);
+  showWorld(createWorld(terrain, seed, asTutorial ? TUTORIAL_OPTIONS : { relays: spec.relays }), paletteFor(code));
   // Every level starts in the Wisp's eyes, even if the last one ended in orbit view.
   if (mode !== 'first-person') setMode('first-person');
   endEl.style.display = 'none';
@@ -208,6 +202,74 @@ function loadLevel(code: number, asTutorial = false): void {
     url.searchParams.set('level', String(seed));
   }
   window.history.replaceState(null, '', url);
+}
+
+/** Puts a world on screen: its land, palette and Keeper. */
+function showWorld(next: World, palette: LevelPalette, topColor?: (cell: number) => number | null): void {
+  world = next;
+  view.applyPalette(palette);
+  setPaused(false);
+  if (terrainMesh) {
+    view.scene.remove(terrainMesh);
+    terrainMesh.geometry.dispose();
+  }
+  terrainMesh = new THREE.Mesh(buildTerrainGeometry(world.terrain, palette, topColor), terrainMaterial);
+  view.scene.add(terrainMesh);
+  keeperView.build(world, view.scene);
+  simClock = 0;
+}
+
+/** Level code the title screen's music is composed from. */
+const TITLE_MUSIC = 1;
+/** The title's beam turns faster than in play, so it crosses the word often. */
+const TITLE_BEAM_SPEED = (2 * Math.PI) / 12;
+const TITLE_PALETTE = PALETTES.find((p) => p.name === 'violet') ?? PALETTES[0];
+/** Letter tops: the gold of the menu's title. */
+const TITLE_LETTER = 0xffd36a;
+/** Title camera framing (tunable from the dev console: __vantage.titleCam). */
+const titleCam = { dist: 86, height: 68, lookY: 0, lookZ: 20, sway: 0.12 };
+/** The title's Keeper is drawn larger, so it holds its own against the word. */
+const TITLE_KEEPER_SCALE = 2.2;
+
+function setTitle(on: boolean): void {
+  title = on;
+  document.body.classList.toggle('title', on);
+  keeperView.group.scale.setScalar(on ? TITLE_KEEPER_SCALE : 1);
+}
+
+/** The title screen: the word in the land, the Keeper's beam sweeping it, the menu in front. */
+function showTitle(): void {
+  const land = titleLand();
+  const w = createWorld(land.terrain, 1, { relays: 0, keeperCell: land.keeperCell });
+  // Bare land: no moss, and no body for the Wisp.
+  w.stacks.forEach((s) => (s.length = 0));
+  w.keeper.yaw = Math.PI / 2;
+  tutorial = false;
+  setTitle(true);
+  highlight.hide();
+  overlay.mesh.visible = false;
+  keeperOverlay.mesh.visible = false;
+  if (mode !== 'first-person') setMode('first-person');
+  const letters = new Set(land.letters);
+  showWorld(w, TITLE_PALETTE, (cell) => (letters.has(cell) ? TITLE_LETTER : null));
+  endEl.style.display = 'none';
+  mood = NEUTRAL_MOOD;
+  music.start(TITLE_MUSIC);
+  voice.stop();
+  hideTaunt();
+  refresh();
+  const url = new URL(window.location.href);
+  for (const k of ['level', 'seed', 'tutorial']) url.searchParams.delete(k);
+  window.history.replaceState(null, '', url);
+  openMenu();
+}
+
+/** Title camera: in front of the word, drifting slowly from side to side. */
+function updateTitleCamera(time: number): void {
+  const { dist, height, lookY, lookZ, sway } = titleCam;
+  const a = sway * Math.sin(time * 0.07);
+  view.camera.position.set(dist * Math.sin(a), height + 1.5 * Math.sin(time * 0.05), dist * Math.cos(a));
+  view.camera.lookAt(0, lookY, lookZ);
 }
 
 function faceNearestMoss(): void {
@@ -631,7 +693,7 @@ function openMenu(): void {
     return `<button data-code="${s.code}" ${open ? '' : 'disabled'} class="${s.code === seed ? 'current' : ''}">${label}</button>`;
   }).join('');
   menuEl.innerHTML =
-    '<h1>VANTAGE</h1>' +
+    (title ? '' : '<h1>VANTAGE</h1>') +
     '<p class="lead">Drain the Keeper’s Relays from above. When its lamp goes dark, take its summit.</p>' +
     (tutorialDone()
       ? '<p><button id="start-tutorial">replay the tutorial</button></p>'
@@ -641,7 +703,10 @@ function openMenu(): void {
     '<form id="code-form"><label>level code <input id="code-input" inputmode="numeric" autocomplete="off" size="8"></label>' +
     ' <button type="submit">play</button> <button type="button" id="random-level">random</button></form>' +
     controlsHtml() +
-    '<p class="keys">[M] or [Esc] back to the game</p>';
+    (title
+      ? ''
+      : '<p class="keys">[M] or [Esc] back to the game · <button id="to-title">title screen</button></p>') +
+    creditsHtml();
   menuEl.style.display = 'flex';
   renderTutorial();
   const details = menuEl.querySelector('details')!;
@@ -670,6 +735,20 @@ function openMenu(): void {
   });
   menuEl.querySelector('#random-level')!.addEventListener('click', () => loadLevel(randomCode()));
   menuEl.querySelector('#start-tutorial')!.addEventListener('click', () => loadLevel(TUTORIAL.code, true));
+  menuEl.querySelector('#to-title')?.addEventListener('click', () => showTitle());
+}
+
+const GITHUB_MARK =
+  '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>';
+
+/** GitHub link and the build's version (a tag, or a commit), bottom right of the menu. */
+function creditsHtml(): string {
+  return (
+    '<div class="credits">' +
+    `<a href="${REPO_URL}" target="_blank" rel="noopener">${GITHUB_MARK}<span>source on GitHub</span></a>` +
+    `<a class="version" href="${versionUrl()}" target="_blank" rel="noopener" title="this build">${VERSION}</a>` +
+    '</div>'
+  );
 }
 
 function closeMenu(): void {
@@ -774,7 +853,8 @@ window.addEventListener('keydown', (e) => {
     return moodPanel.toggle();
   }
   if (menuOpen) {
-    if (key === 'm' || key === 'escape') closeMenu();
+    // The title screen has no game behind its menu to go back to.
+    if ((key === 'm' || key === 'escape') && !title) closeMenu();
     return;
   }
   if (key === 'm') return openMenu();
@@ -833,10 +913,7 @@ if (query.has('tutorial')) {
 } else if (Number.isInteger(param) && param > 0) {
   loadLevel(param);
 } else {
-  // No level asked for: show the menu over the first level not yet won.
-  const i = CAMPAIGN.findIndex((s, i) => unlocked(i) && bestStars(s.code) === 0);
-  loadLevel(CAMPAIGN[i >= 0 ? i : 0].code);
-  openMenu();
+  showTitle();
 }
 setMode('first-person');
 
@@ -844,7 +921,10 @@ const clock = new THREE.Clock();
 let camY = 0;
 view.renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
-  if (mode === 'first-person') {
+  if (title) {
+    updateTitleCamera(clock.elapsedTime);
+    world.keeper.yaw = (world.keeper.yaw + TITLE_BEAM_SPEED * dt) % (Math.PI * 2);
+  } else if (mode === 'first-person') {
     look.update(dt);
     const eye = playerEye(world);
     // Ease vertical changes (e.g. a Spire lifting us) instead of snapping.
@@ -866,7 +946,7 @@ view.renderer.setAnimationLoop(() => {
   entities.animate();
   mothView.update(world, clock.elapsedTime);
   relayView.animate(clock.elapsedTime);
-  updateBeamUi();
+  if (!title) updateBeamUi();
   updateMusic(dt);
   if (tauntTimer > 0) {
     tauntTimer -= dt;
@@ -877,8 +957,10 @@ view.renderer.setAnimationLoop(() => {
     messageTimer -= dt;
     if (messageTimer <= 0) messageEl.style.opacity = '0';
   }
-  updateTarget();
-  updateHud();
+  if (!title) {
+    updateTarget();
+    updateHud();
+  }
   view.render();
 });
 
@@ -896,6 +978,8 @@ if (import.meta.env.DEV) {
     voice,
     taunt,
     tutorial: () => ({ active: tutorial, step: tutorialStep }),
+    titleCam,
+    showTitle,
     mood: () => mood,
     settings,
     refresh,

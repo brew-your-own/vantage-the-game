@@ -283,6 +283,14 @@ start, all Relays placed and at least 20 hiding tiles; random levels (N, menu) r
 fair (about 1 in 5 codes is, ~45 ms per check); typed or linked harsh codes still load, with a
 warning.
 
+**As built (M10, part 2).** *Title screen*: `src/core/title.ts` raises the word VANTAGE out of
+low ground (a 5×7 font, two tiles per pixel so strokes stay upright on offset hex rows), with a
+hill behind it for the Keeper. The title shows that land with gold letter tops, a larger Keeper
+whose beam sweeps the word (letters light up and cast shadows), a slowly drifting camera, and
+the menu low and see-through in front, with a GitHub link and the build version. The version
+comes from `git describe --tags` at build time (`vite.config.ts`); CI checks out full history
+so tags are found, and pushing a `v*` tag redeploys.
+
 ## 5. Testing strategy
 - **Unit tests (Vitest)** for everything in `src/core`: PRNG determinism, hex math, terrain
   invariants (connectivity, minimum flat tiles), LOS edge cases, rules for every action,

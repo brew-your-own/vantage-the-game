@@ -58,4 +58,10 @@ In dev builds, the backquote key opens a panel for auditioning the adaptive musi
 Every push to `main` runs `.github/workflows/deploy.yml`: tests, build, then publish `dist/`
 to GitHub Pages (repo Settings → Pages → Source: GitHub Actions).
 
+The title screen shows which build is live, from `git describe --tags`: a tag such as
+`v1.0.0` when the deployed commit is tagged, `v1.0.0-3-gabc1234` for commits after a tag,
+or just the short commit hash before the first tag. It links to the release or the commit.
+To release, tag and push the tag (`git tag v1.0.0 && git push origin v1.0.0`): tag pushes
+deploy too.
+
 See [docs/PLAN.md](docs/PLAN.md) for the design and implementation plan.

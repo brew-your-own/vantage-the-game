@@ -114,6 +114,8 @@ export interface WorldOptions {
   beamScale?: number;
   /** Energy the Wisp starts with. Default START_ENERGY. */
   startEnergy?: number;
+  /** Where the Keeper stands (the title screen places it). Default: picked from the terrain. */
+  keeperCell?: number;
 }
 
 export const DEFAULT_OPTIONS: WorldOptions = { relays: 4 };
@@ -147,7 +149,7 @@ const MOSS_DENSITY = 0.1;
 
 export function createWorld(terrain: Terrain, seed: number, options: WorldOptions = DEFAULT_OPTIONS): World {
   const stacks: Entity[][] = terrain.grid.cells.map(() => []);
-  const keeperCell = pickKeeperCell(terrain, seed);
+  const keeperCell = options.keeperCell ?? pickKeeperCell(terrain, seed);
   const startCell = pickStartCell(terrain, seed, keeperCell);
   const rng = new Rng((seed ^ 0x3c6ef372) >>> 0);
   let yaw = rng.range(0, Math.PI * 2);

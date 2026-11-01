@@ -3,6 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    # Pushing a version tag (v1.2.0) redeploys, so the title screen shows the tag.
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -20,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history and tags, for the version shown on the title screen (git describe).
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
