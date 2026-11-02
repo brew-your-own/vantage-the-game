@@ -29,6 +29,10 @@ export interface TitleLand {
   terrain: Terrain;
   /** Tiles that form the letters. */
   letters: number[];
+  /** Tiles the Keeper's hill raises above the ground. */
+  hill: number[];
+  /** The land before the word and the hill rise out of it (the title's opening frame). */
+  ground: Uint8Array;
   keeperCell: number;
 }
 
@@ -56,6 +60,7 @@ export function titleLand(word = 'VANTAGE'): TitleLand {
     const v = fbm(q * 0.12 + 31.4, r * 0.12 - 7.7, 0x7171e);
     heights[i] = Math.max(0, Math.min(2, Math.round(v * 3)));
   });
+  const ground = heights.slice();
 
   const letters: number[] = [];
   glyphs.forEach((glyph, g) => {
@@ -79,16 +84,22 @@ export function titleLand(word = 'VANTAGE'): TitleLand {
   // The Keeper's hill: a cone of terraces behind the word.
   const kr = TOP_ROW - KEEPER_GAP;
   const keeper = { q: -Math.floor(kr / 2), r: kr };
+  const hillCells: number[] = [];
   grid.cells.forEach((c, i) => {
     const d = (Math.abs(c.q - keeper.q) + Math.abs(c.r - keeper.r) + Math.abs(c.q + c.r - keeper.q - keeper.r)) / 2;
     const hill = KEEPER_LEVEL - Math.ceil(d * 1.2);
-    if (hill > heights[i]) heights[i] = hill;
+    if (hill > heights[i]) {
+      heights[i] = hill;
+      hillCells.push(i);
+    }
   });
   const keeperCell = grid.indexOf(keeper.q, keeper.r);
 
   return {
     terrain: { params: { seed: 0, radius, maxHeight: KEEPER_LEVEL, maxStep: KEEPER_LEVEL }, grid, heights },
     letters,
+    hill: hillCells,
+    ground,
     keeperCell,
   };
 }

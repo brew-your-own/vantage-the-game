@@ -38,6 +38,8 @@ import { KeeperView } from './render/keeperView';
 import { RelayView } from './render/relayView';
 import { type LevelPalette, PALETTES, paletteFor } from './render/palettes';
 import { titleLand } from './core/title';
+import { WAVE, beamSpin, rumble } from './core/titleIntro';
+import { TitleIntroView } from './render/titleIntro';
 import { REPO_URL, VERSION, versionUrl } from './version';
 import { Sfx } from './audio/sfx';
 import { Music } from './audio/music/music';
@@ -162,6 +164,11 @@ let lastYaw = 0;
 let menuOpen = false;
 /** On the title screen: the word VANTAGE in the land, the Keeper sweeping it, the menu over it. */
 let title = false;
+/** The title's opening (the land rising, the Keeper forming), and seconds into it. */
+let intro: TitleIntroView | null = null;
+let introT = 0;
+/** Dev: holds the opening still (__vantage.titleIntro(t, true)), for checking frames. */
+let introFrozen = false;
 let world: World;
 let terrainMesh: THREE.Mesh | null = null;
 /** Tiles whose ground is in view from the current body (cached until the world changes). */
@@ -247,6 +254,22 @@ function setTitle(on: boolean): void {
   title = on;
   document.body.classList.toggle('title', on);
   keeperView.group.scale.setScalar(on ? TITLE_KEEPER_SCALE : 1);
+  intro?.dispose();
+  intro = null;
+  keeperView.group.visible = true;
+  keeperView.beamFade = 1;
+  document.body.classList.remove('intro');
+}
+
+/** The menu fades in as the last letters settle. */
+const introMenuAt = () => (intro ? intro.plan.lettersEnd - 0.8 : 0);
+
+/** A key or click during the opening jumps to the word standing; true if there was one to skip. */
+function skipIntro(): boolean {
+  if (!intro || introT >= intro.plan.lettersEnd) return false;
+  introT = intro.plan.lettersEnd;
+  document.body.classList.remove('intro');
+  return true;
 }
 
 /** The title screen: the word in the land, the Keeper's beam sweeping it, the menu in front. */
@@ -255,7 +278,8 @@ function showTitle(): void {
   const w = createWorld(land.terrain, 1, { relays: 0, keeperCell: land.keeperCell });
   // Bare land: no moss, and no body for the Wisp.
   w.stacks.forEach((s) => (s.length = 0));
-  w.keeper.yaw = Math.PI / 2;
+  // The lamp first faces away from us, so its light doesn't flood the view as the word rises.
+  w.keeper.yaw = -Math.PI / 2;
   tutorial = false;
   setTitle(true);
   highlight.hide();
@@ -264,23 +288,40 @@ function showTitle(): void {
   if (mode !== 'first-person') setMode('first-person');
   const letters = new Set(land.letters);
   showWorld(w, TITLE_PALETTE, (cell) => (letters.has(cell) ? TITLE_LETTER : null));
+  const bare = buildTerrainGeometry({ ...land.terrain, heights: land.ground }, TITLE_PALETTE);
+  intro = new TitleIntroView(land, terrainMesh!.geometry, bare, keeperView, TITLE_KEEPER_SCALE, view.scene);
+  bare.dispose();
+  // With reduced motion the word is simply there.
+  introT = access.reducedMotion ? intro.plan.lettersEnd : 0;
+  document.body.classList.toggle('intro', introT < introMenuAt());
   endEl.style.display = 'none';
   mood = NEUTRAL_MOOD;
   music.start(TITLE_MUSIC);
   voice.stop();
   hideTaunt();
   refresh();
+  intro.update(introT);
   const url = new URL(window.location.href);
   for (const k of ['level', 'seed', 'tutorial']) url.searchParams.delete(k);
   window.history.replaceState(null, '', url);
   openMenu();
 }
 
-/** Title camera: in front of the word, drifting slowly from side to side. */
+/**
+ * Title camera: in front of the word, drifting slowly from side to side. During the opening
+ * it starts a little closer and lower, eases back as the word rises, and shakes with the ground.
+ */
 function updateTitleCamera(time: number): void {
   const { dist, height, lookY, lookZ, sway } = titleCam;
+  const settle = intro ? 1 - (1 - Math.min(1, introT / intro.plan.lettersEnd)) ** 3 : 1;
+  const d = dist * (0.84 + 0.16 * settle);
   const a = wobble(sway * Math.sin(time * 0.07));
-  view.camera.position.set(dist * Math.sin(a), height + wobble(1.5 * Math.sin(time * 0.05)), dist * Math.cos(a));
+  const shake = wobble(0.35 * rumble(introT));
+  view.camera.position.set(
+    d * Math.sin(a) + shake * Math.sin(time * 37),
+    height * (0.82 + 0.18 * settle) + wobble(1.5 * Math.sin(time * 0.05)) + shake * Math.sin(time * 29 + 1),
+    d * Math.cos(a),
+  );
   view.camera.lookAt(0, lookY, lookZ);
 }
 
@@ -888,6 +929,7 @@ window.addEventListener('keydown', (e) => {
     return moodPanel.toggle();
   }
   if (menuOpen) {
+    if (title && skipIntro()) return;
     // The title screen has no game behind its menu to go back to.
     if ((key === 'm' || key === 'escape') && !title) closeMenu();
     return;
@@ -936,7 +978,10 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && world.status === 'playing' && !menuOpen) setPaused(true);
 });
 
-window.addEventListener('pointerdown', () => unlockAudio());
+window.addEventListener('pointerdown', () => {
+  unlockAudio();
+  skipIntro();
+});
 
 canvas.addEventListener('mousedown', (e) => {
   if (mode === 'first-person' && look.locked && e.button === 0 && target) act({ type: 'harvest', cell: target.cell });
@@ -958,8 +1003,14 @@ let camY = 0;
 view.renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   if (title) {
+    if (intro) {
+      if (!introFrozen) introT += dt;
+      intro.update(introT);
+      if (introT >= introMenuAt()) document.body.classList.remove('intro');
+    }
     updateTitleCamera(clock.elapsedTime);
-    world.keeper.yaw = (world.keeper.yaw + TITLE_BEAM_SPEED * dt) % (Math.PI * 2);
+    const spin = intro ? beamSpin(intro.plan, introT) : 1;
+    world.keeper.yaw = (world.keeper.yaw + TITLE_BEAM_SPEED * spin * dt) % (Math.PI * 2);
   } else if (mode === 'first-person') {
     look.update(dt);
     const eye = playerEye(world);
@@ -1015,6 +1066,12 @@ if (import.meta.env.DEV) {
     taunt,
     tutorial: () => ({ active: tutorial, step: tutorialStep }),
     titleCam,
+    titleWave: WAVE,
+    titleIntro: (t?: number, freeze = false) => {
+      if (t !== undefined) introT = t;
+      introFrozen = freeze;
+      return { t: introT, end: intro?.plan.lettersEnd };
+    },
     showTitle,
     mood: () => mood,
     settings,

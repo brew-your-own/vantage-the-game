@@ -20,6 +20,10 @@ export class KeeperView {
   private readonly plinth: THREE.Mesh;
   private tiles: THREE.InstancedMesh | null = null;
   private lampVisible: Uint8Array = new Uint8Array(0);
+  /** Scales the beam and its lit tiles (the title fades them in); 1 in play. */
+  beamFade = 1;
+  private readonly tileMatrix = new THREE.Matrix4();
+  private readonly litColor = new THREE.Color();
 
   constructor() {
     // Stained glass: every facet of the tower an indigo, violet or teal pane, with gold trim.
@@ -83,6 +87,15 @@ export class KeeperView {
     scene.add(this.tiles);
   }
 
+  /** Moves a tile's lit disc to height y (the title's tiles rise and fall). */
+  setTileHeight(cell: number, y: number): void {
+    if (!this.tiles) return;
+    this.tiles.getMatrixAt(cell, this.tileMatrix);
+    this.tileMatrix.elements[13] = y + 0.015;
+    this.tiles.setMatrixAt(cell, this.tileMatrix);
+    this.tiles.instanceMatrix.needsUpdate = true;
+  }
+
   /** Call when objects change (shadows move). */
   setLampVisibility(visible: Uint8Array): void {
     this.lampVisible = visible;
@@ -98,11 +111,13 @@ export class KeeperView {
     this.beam.rotation.y = -world.keeper.yaw;
     const scale = Math.tan(beamParams(world).halfAngle) / Math.tan((15 * Math.PI) / 180);
     this.beam.scale.set(1, 1, scale);
-    (this.beam.material as THREE.MeshBasicMaterial).opacity = 0.85 + wobble(0.15 * Math.sin(time * 3));
+    (this.beam.material as THREE.MeshBasicMaterial).opacity = (0.85 + wobble(0.15 * Math.sin(time * 3))) * this.beamFade;
+    this.beam.visible = this.beamFade > 0;
 
     if (!this.tiles) return;
+    const lit = this.litColor.copy(LIT_COLOR).multiplyScalar(this.beamFade);
     for (let i = 0; i < this.lampVisible.length; i++) {
-      this.tiles.setColorAt(i, tileLit(world, i, this.lampVisible[i] === 1) ? LIT_COLOR : DARK);
+      this.tiles.setColorAt(i, tileLit(world, i, this.lampVisible[i] === 1) ? lit : DARK);
     }
     this.tiles.instanceColor!.needsUpdate = true;
   }

@@ -25,6 +25,8 @@ export const DEFAULT_PALETTE: TerrainPalette = {
 export const BASE_Y = -1.5;
 
 type V3 = [number, number, number];
+/** A surface vertex and the tile it belongs to (its height follows that tile's). */
+type P = [number, number, number, number];
 
 /**
  * Builds one non-indexed BufferGeometry for the whole terrain:
@@ -32,6 +34,9 @@ type V3 = [number, number, number];
  * - a quad per shared edge connecting neighbouring tops (flat or sloped),
  * - a triangle per inner vertex where three tiles meet,
  * - vertical skirts along the outer boundary plus an underside.
+ *
+ * `userData.cellOf` maps each vertex to the tile whose height it sits at (−1 for the skirt),
+ * so the title screen can raise and lower tiles in place.
  */
 export function buildTerrainGeometry(
   terrain: Terrain,
@@ -42,6 +47,7 @@ export function buildTerrainGeometry(
   const { grid, heights, params } = terrain;
   const positions: number[] = [];
   const colors: number[] = [];
+  const owners: number[] = [];
   const tmp = new THREE.Color();
 
   const tops = palette.tops.map((c) => new THREE.Color(c));
@@ -52,23 +58,26 @@ export function buildTerrainGeometry(
 
   const centers = grid.cells.map((c) => hexToWorld(c.q, c.r, HEX_SIZE));
   const corners = Array.from({ length: 6 }, (_, i) => cornerOffset(i, HEX_SIZE * TOP_INSET));
-  const inner = (cell: number, corner: number): V3 => {
+  const inner = (cell: number, corner: number): P => {
     const c = centers[cell];
     const o = corners[((corner % 6) + 6) % 6];
-    return [c.x + o.x, heights[cell] * LEVEL_HEIGHT, c.z + o.z];
+    return [c.x + o.x, heights[cell] * LEVEL_HEIGHT, c.z + o.z, cell];
   };
 
   /** Pushes a triangle facing up (+Y), flipping winding if needed. */
-  const triUp = (a: V3, b: V3, c: V3, color: THREE.Color) => {
+  const triUp = (a: P, b: P, c: P, color: THREE.Color) => {
     const ux = b[0] - a[0], uz = b[2] - a[2];
     const vx = c[0] - a[0], vz = c[2] - a[2];
     const ny = uz * vx - ux * vz; // Y component of (b-a) × (c-a)
     if (ny < 0) [b, c] = [c, b];
     pushTri(a, b, c, color);
   };
-  const pushTri = (a: V3, b: V3, c: V3, color: THREE.Color) => {
-    positions.push(...a, ...b, ...c);
-    for (let k = 0; k < 3; k++) colors.push(color.r, color.g, color.b);
+  const pushTri = (a: P, b: P, c: P, color: THREE.Color) => {
+    for (const v of [a, b, c]) {
+      positions.push(v[0], v[1], v[2]);
+      colors.push(color.r, color.g, color.b);
+      owners.push(v[3]);
+    }
   };
   const bevelColor = (cells: number[]) => {
     const hs = cells.map((c) => heights[c]);
@@ -86,7 +95,7 @@ export function buildTerrainGeometry(
     // Tile top: lighter with altitude.
     const custom = topColor?.(i);
     const top = custom != null ? tmp.set(custom) : tmp.copy(tops[(((q - r) % 3) + 3) % 3]).lerp(white, (h / params.maxHeight) * 0.25);
-    const c: V3 = [centers[i].x, h * LEVEL_HEIGHT, centers[i].z];
+    const c: P = [centers[i].x, h * LEVEL_HEIGHT, centers[i].z, i];
     for (let k = 0; k < 6; k++) triUp(c, inner(i, k), inner(i, k + 1), top);
 
     // Edge strips: this cell owns edges 0..2 so each shared edge is built once.
@@ -110,12 +119,15 @@ export function buildTerrainGeometry(
   }
 
   addSkirtAndBase(positions, colors, skirt);
+  const cellOf = new Int32Array(positions.length / 3).fill(-1);
+  cellOf.set(owners);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.computeVertexNormals(); // non-indexed → flat face normals
   geometry.computeBoundingSphere();
+  geometry.userData.cellOf = cellOf;
   return geometry;
 }
 
